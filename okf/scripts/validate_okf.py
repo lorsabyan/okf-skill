@@ -20,6 +20,16 @@ from pathlib import Path
 RESERVED = {"index.md", "log.md"}
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 DATE_HEADING_RE = re.compile(r"^## \d{4}-\d{2}-\d{2}\s*$")
+FENCED_BLOCK_RE = re.compile(r"^(`{3,}|~{3,}).*?^\1`*\s*$", re.M | re.S)
+INDEX_ENTRY_RE = re.compile(r"^[*-] \[", re.M)
+
+
+def list_md_files(root: Path) -> list[Path]:
+    """All .md files in the bundle, skipping hidden directories/files."""
+    return sorted(
+        p for p in root.rglob("*.md")
+        if not any(part.startswith(".") for part in p.relative_to(root).parts)
+    )
 
 
 def split_frontmatter(text: str) -> tuple[dict[str, str] | None, str]:
@@ -48,7 +58,7 @@ def split_frontmatter(text: str) -> tuple[dict[str, str] | None, str]:
 def check_bundle(root: Path) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
-    md_files = sorted(p for p in root.rglob("*.md") if not any(part.startswith(".") for part in p.relative_to(root).parts))
+    md_files = list_md_files(root)
     concepts = {p for p in md_files if p.name not in RESERVED}
     concept_paths = {"/" + p.relative_to(root).as_posix() for p in concepts}
     dirs_with_md = {p.parent for p in md_files}
@@ -62,7 +72,7 @@ def check_bundle(root: Path) -> tuple[list[str], list[str]]:
             if path.name == "index.md":
                 if fm is not None and path.parent != root:
                     warnings.append(f"{rel}: frontmatter in index.md is only permitted at the bundle root (for okf_version)")
-                if not re.search(r"^\* \[", body if fm is not None else text, re.M):
+                if not INDEX_ENTRY_RE.search(body if fm is not None else text):
                     warnings.append(f"{rel}: index.md has no '* [Title](url) - description' entries")
             elif path.name == "log.md":
                 if not any(DATE_HEADING_RE.match(ln) for ln in text.splitlines()):
@@ -74,12 +84,14 @@ def check_bundle(root: Path) -> tuple[list[str], list[str]]:
             if not fm.get("type"):
                 errors.append(f"{rel}: frontmatter is missing a non-empty 'type' field")
             if not fm.get("description"):
-                warnings.append(f"{rel}: no 'description' — index generators and previews rely on it")
+                warnings.append(f"{rel}: no 'description' - index generators and previews rely on it")
             if fm.get("timestamp") and not re.match(r"^\d{4}-\d{2}-\d{2}", fm["timestamp"]):
                 warnings.append(f"{rel}: 'timestamp' does not look like ISO 8601")
 
-        # Cross-link resolution (broken links are legal → warning only).
-        for target in LINK_RE.findall(text):
+        # Cross-link resolution (broken links are legal -> warning only).
+        # Fenced code blocks often quote example markdown; don't scan them.
+        prose = FENCED_BLOCK_RE.sub("", text)
+        for target in LINK_RE.findall(prose):
             if re.match(r"^[a-z][a-z0-9+.-]*:", target) or target.startswith("#"):
                 continue  # external URL or in-page anchor
             target = target.split("#")[0]
@@ -88,8 +100,12 @@ def check_bundle(root: Path) -> tuple[list[str], list[str]]:
             if target.startswith("/"):
                 resolved = target
             else:
-                resolved = "/" + (path.parent / target).resolve().relative_to(root.resolve()).as_posix() \
-                    if (path.parent / target).resolve().is_relative_to(root.resolve()) else None
+                try:
+                    abs_target = (path.parent / target).resolve()
+                    resolved = "/" + abs_target.relative_to(root.resolve()).as_posix() \
+                        if abs_target.is_relative_to(root.resolve()) else None
+                except OSError:
+                    continue  # target isn't a representable path on this OS
             if resolved and resolved not in concept_paths and not (root / resolved.lstrip("/")).exists():
                 warnings.append(f"{rel}: link to missing concept '{target}'")
 
@@ -115,7 +131,7 @@ def main() -> int:
         print(f"ERROR   {msg}")
     for msg in warnings:
         print(f"warning {msg}")
-    n_concepts = len([p for p in args.bundle.rglob('*.md') if p.name not in RESERVED])
+    n_concepts = len([p for p in list_md_files(args.bundle) if p.name not in RESERVED])
     print(f"\n{args.bundle}: {n_concepts} concept doc(s), {len(errors)} error(s), {len(warnings)} warning(s)")
     if errors or (args.strict and warnings):
         return 1

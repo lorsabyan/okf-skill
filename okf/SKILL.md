@@ -31,7 +31,7 @@ versioning). This file covers the 90% you need for day-to-day work.
 
 Every concept file = YAML frontmatter + markdown body:
 
-```markdown
+````markdown
 ---
 type: BigQuery Table            # REQUIRED — the only required field
 title: Customer Orders          # recommended: display name
@@ -58,7 +58,7 @@ SELECT COUNT(*) FROM `acme.sales.orders`;
 # Citations
 
 [1] [BigQuery table schema](https://console.cloud.google.com/bigquery?p=acme&d=sales&t=orders)
-```
+````
 
 Rules that matter:
 
