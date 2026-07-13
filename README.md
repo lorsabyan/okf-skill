@@ -54,6 +54,11 @@ descriptions/indexes) as warnings. `--strict` promotes warnings to errors.
 Verified against the three reference bundles shipped in the upstream repo
 (ga4, stackoverflow, crypto_bitcoin) — all pass with zero errors and warnings.
 
+## Related
+
+- [okf-reader](https://github.com/lorsabyan/okf-reader) — static-first web app
+  for humans to read, navigate, and explore OKF bundles.
+
 ## License
 
 Apache 2.0. `okf/references/SPEC.md` is reproduced from
