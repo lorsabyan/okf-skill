@@ -150,12 +150,17 @@ gameable:
 | Validator | Detection (19 defects) | Clean pass (10 clean) |
 |---|---|---|
 | **okf-skill** | **19/19** | **10/10** |
-| [okf-reader](https://github.com/lorsabyan/okf-reader) `@okf/core` | 9/19 | 9/10 |
+| [okf-reader](https://github.com/lorsabyan/okf-reader) `@okf/core` | 9/19 | **10/10** |
 
 Deterministic: no model, no grader, clock pinned. Detection is largely a scope
-decision; **clean pass** is the correctness number worth comparing. The one false
-positive it found is in okf-reader, not a competitor — reported rather than
-excluded ([okf-reader#8](https://github.com/lorsabyan/okf-reader/issues/8)).
+decision; **clean pass** is the correctness number worth comparing.
+
+It has already earned its keep: the one false positive it found was in
+okf-reader, not a competitor — links inside indented code fences reported as
+broken. Filed as
+[okf-reader#8](https://github.com/lorsabyan/okf-reader/issues/8) and fixed in
+[#9](https://github.com/lorsabyan/okf-reader/pull/9) rather than quietly dropped
+from the corpus, taking its clean half from 9/10 to 10/10.
 
 ```sh
 python3 benchmark/run.py
