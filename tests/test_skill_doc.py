@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import REPO_ROOT, SKILL_MD, write  # noqa: F401  also adds okf/scripts to sys.path
+from helpers import REPO_ROOT, SKILL_MD, pinned_ref, write  # noqa: F401  also adds okf/scripts to sys.path
 from validate_okf import check_bundle, parse_frontmatter  # noqa: E402
 
 SKILL = SKILL_MD.read_text(encoding="utf-8")
@@ -123,8 +123,9 @@ class GuidanceRegressions(unittest.TestCase):
     def test_spec_reference_is_vendored_and_pinned(self):
         spec = REPO_ROOT / "okf" / "references" / "SPEC.md"
         self.assertTrue(spec.is_file())
-        head = spec.read_text(encoding="utf-8")[:600]
-        self.assertIn("blob/3fcbb9f", head, "vendored SPEC must cite a pinned commit, not a branch")
+        # Which commit is asserted in test_pinned_refs.py; here we only care that
+        # the vendored spec cites one, and is the version this skill teaches.
+        self.assertIn(f"blob/{pinned_ref()}", spec.read_text(encoding="utf-8")[:600])
         self.assertIn("**Version 0.2**", spec.read_text(encoding="utf-8"))
 
 
