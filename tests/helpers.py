@@ -17,7 +17,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = REPO_ROOT / "okf" / "scripts"
 SKILL_MD = REPO_ROOT / "okf" / "SKILL.md"
 SPEC_MD = REPO_ROOT / "okf" / "references" / "SPEC.md"
-CI_YML = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+CI_YML = WORKFLOWS / "ci.yml"
+FRESHNESS_YML = WORKFLOWS / "upstream-freshness.yml"
 README_MD = REPO_ROOT / "README.md"
 
 if str(SCRIPTS) not in sys.path:
