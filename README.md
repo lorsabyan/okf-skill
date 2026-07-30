@@ -207,10 +207,37 @@ an OKF v0.3 — the OKF version this skill targets is always the one pinned in
 `okf/references/SPEC.md`'s attribution header, and `tests/test_pinned_refs.py`
 enforces that every other citation agrees with it.
 
+## Skill or MCP server?
+
+This skill and [okf-mcp-server](https://github.com/lorsabyan/okf-mcp-server) do
+overlapping jobs. They are not alternatives to weigh case by case — which one you
+want follows from your client:
+
+| Your agent | Use | Why |
+|---|---|---|
+| **Claude Code, Codex** | **this skill** | Skills load automatically and carry the format itself, so the agent reads bundles with the file tools it already has. Nothing extra to install or run. |
+| **Cursor, Windsurf, Zed, other MCP clients** | **okf-mcp-server** | No skill support, so the format has to arrive as tools instead. |
+| **An agent with no filesystem access** | **okf-mcp-server** | This skill needs to read files and run scripts; the server works over a protocol. |
+
+**Do not install both in Claude Code.** Measured, not assumed: with the skill
+present, a real session answered a bundle question using the skill plus `Read`
+and `Bash`, and made **zero** MCP calls. The skill triggers on any mention of OKF
+and prescribes a complete procedure, while MCP tools cost a `ToolSearch`
+round-trip before the first call — so the server can only add latency here, never
+capability.
+
+The two share no code. The skill carries a stdlib-only Python validator; the
+server is TypeScript on
+[`@lorsabyan/okf-core`](https://www.npmjs.com/package/@lorsabyan/okf-core). Their
+validators are independently written, which is what makes the
+[benchmark](benchmark/) meaningful.
+
 ## Related
 
 - [okf-reader](https://github.com/lorsabyan/okf-reader) — static-first web app
   for humans to read, navigate, and explore OKF bundles.
+- [okf-mcp-server](https://github.com/lorsabyan/okf-mcp-server) — the same
+  bundles as MCP tools, for clients without skill support.
 
 ## License
 
