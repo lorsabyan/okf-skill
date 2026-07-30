@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Pinned so a new upstream commit cannot turn this repo's CI red on its own.
+# Bump together with okf/references/SPEC.md.
+env:
+  KNOWLEDGE_CATALOG_REF: 3fcbb9f
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.9", "3.11", "3.13"]
+        include:
+          # The validator resolves links case-exactly rather than deferring to the
+          # filesystem; run once on macOS so a case-insensitive volume cannot
+          # silently diverge from Linux.
+          - os: macos-latest
+            python: "3.13"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Tests (offline)
+        working-directory: tests
+        run: python -m unittest discover -s . -t . -v
+
+      - name: Fetch upstream reference bundles
+        run: |
+          git clone --quiet --filter=blob:none --no-checkout \
+            https://github.com/GoogleCloudPlatform/knowledge-catalog.git upstream
+          git -C upstream checkout --quiet "$KNOWLEDGE_CATALOG_REF"
+          echo "OKF_REFERENCE_BUNDLES=$PWD/upstream/okf/bundles" >> "$GITHUB_ENV"
+
+      - name: Tests (including reference bundles)
+        working-directory: tests
+        run: python -m unittest discover -s . -t . -v
+
+      - name: Vendored spec matches upstream at the pinned commit
+        run: |
+          # Everything after the attribution header must be byte-identical.
+          tail -n +6 okf/references/SPEC.md > /tmp/vendored.md
+          if ! diff -u upstream/okf/SPEC.md /tmp/vendored.md; then
+            echo "::error::okf/references/SPEC.md has drifted from upstream at $KNOWLEDGE_CATALOG_REF"
+            exit 1
+          fi
+
+      - name: Validator runs clean on every reference bundle
+        run: |
+          rc=0
+          for bundle in upstream/okf/bundles/*/; do
+            name=$(basename "$bundle")
+            echo "--- $name"
+            # --today is pinned so upstream's stale_after dates passing cannot
+            # turn this repo's CI red.
+            python okf/scripts/validate_okf.py "$bundle" --strict --today 2026-07-30 || rc=1
+            python okf/scripts/generate_index.py "$bundle" --check || rc=1
+          done
+          exit $rc
