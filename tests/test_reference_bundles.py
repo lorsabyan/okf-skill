@@ -26,8 +26,10 @@ BUNDLES = os.environ.get("OKF_REFERENCE_BUNDLES")
 EXPECTED = ("ga4", "stackoverflow", "crypto_bitcoin", "acme_retail")
 
 # The bundles were authored with stale_after dates in late 2026; pin the clock so
-# the suite does not start failing once those pass.
-AS_OF = date(2026, 7, 30)
+# the suite does not start failing once those pass. CI supplies the same day it
+# gives the validator gate, via REFERENCE_AS_OF, so the two cannot disagree; the
+# literal below is only a fallback for running the suite by hand.
+AS_OF = date.fromisoformat(os.environ.get("OKF_AS_OF") or "2026-07-30")
 
 
 @unittest.skipUnless(BUNDLES, "set OKF_REFERENCE_BUNDLES to the upstream okf/bundles directory")
