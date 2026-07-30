@@ -167,6 +167,16 @@ To exercise it without waiting, dispatch it with a future date:
 gh workflow run upstream-freshness.yml -f as_of=2027-01-01
 ```
 
+## Versioning
+
+Releases are tagged and documented in [CHANGELOG.md](CHANGELOG.md).
+
+The version tracks **the skill**, not the format. They line up at `0.2.x` today
+because that release added OKF v0.2 support, but a future `0.3.0` would not imply
+an OKF v0.3 — the OKF version this skill targets is always the one pinned in
+`okf/references/SPEC.md`'s attribution header, and `tests/test_pinned_refs.py`
+enforces that every other citation agrees with it.
+
 ## Related
 
 - [okf-reader](https://github.com/lorsabyan/okf-reader) — static-first web app
