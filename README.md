@@ -140,6 +140,31 @@ All four upstream bundles (`ga4`, `stackoverflow`, `crypto_bitcoin`,
 the index generator is a no-op on every one of them. CI also diffs the vendored
 `SPEC.md` against upstream at the pinned commit, so the two cannot drift.
 
+## Benchmark
+
+A labeled corpus of 29 bundles — 19 carrying exactly one defect, 10 entirely
+valid but shaped the way naive implementations trip over — run through every
+available OKF validator and scored on **both** axes, because either alone is
+gameable:
+
+| Validator | Detection (19 defects) | Clean pass (10 clean) |
+|---|---|---|
+| **okf-skill** | **19/19** | **10/10** |
+| [okf-reader](https://github.com/lorsabyan/okf-reader) `@okf/core` | 9/19 | 9/10 |
+
+Deterministic: no model, no grader, clock pinned. Detection is largely a scope
+decision; **clean pass** is the correctness number worth comparing. The one false
+positive it found is in okf-reader, not a competitor — reported rather than
+excluded ([okf-reader#8](https://github.com/lorsabyan/okf-reader/issues/8)).
+
+```sh
+python3 benchmark/run.py
+```
+
+Method, limits, and the control that makes it meaningful:
+[benchmark/README.md](benchmark/README.md). CI fails on any regression from
+19/19 and 10/10.
+
 ## Maintenance
 
 **Bumping the vendored spec.** The upstream commit is pinned in exactly one

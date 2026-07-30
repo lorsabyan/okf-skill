@@ -70,6 +70,15 @@ jobs:
           OKF_AS_OF: ${{ env.REFERENCE_AS_OF }}
         run: python -m unittest discover -s . -t . -v
 
+      - name: Benchmark (this repo's validator must stay at 19/19 and 10/10)
+        run: |
+          out=$(python benchmark/run.py)
+          echo "$out"
+          echo "$out" | grep -q 'okf-skill .*detection 19/19   clean pass 10/10' || {
+            echo "::error::benchmark regression — see the table above"
+            exit 1
+          }
+
       - name: Vendored spec matches upstream at the pinned commit
         run: |
           # Everything after the attribution header must be byte-identical.
