@@ -90,28 +90,7 @@ jobs:
           done
           exit $rc
 
-      - name: Upstream bundle freshness (informational)
-        # Runs once, against the real clock, and never fails the build: a stale
-        # upstream bundle is news, not a regression here. Surfaced as annotations
-        # so it is visible without anyone re-reading the pinned gate above.
-        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
-        continue-on-error: true
-        run: |
-          today=$(date -u +%F)
-          echo "Evaluating upstream bundles as of $today (gate pins $REFERENCE_AS_OF)"
-          stale=0
-          for bundle in upstream/okf/bundles/*/; do
-            name=$(basename "$bundle")
-            while IFS= read -r line; do
-              [ -z "$line" ] && continue
-              stale=$((stale + 1))
-              echo "::notice title=Upstream bundle stale::$name — $line"
-            done < <(python okf/scripts/validate_okf.py "$bundle" --report \
-                       | grep 'STALE' | sed 's/[[:space:]]\{2,\}/ /g')
-          done
-          if [ "$stale" -eq 0 ]; then
-            echo "No upstream concept is past its stale_after as of $today."
-          else
-            echo "::warning::$stale upstream concept(s) are past stale_after as of $today."
-            echo "If upstream has re-verified them, bump the pinned commit in okf/references/SPEC.md."
-          fi
+      # Upstream staleness is deliberately not checked here. It is a function of
+      # the calendar rather than of this repo's commits, and a run annotation
+      # notifies nobody, so it lives in upstream-freshness.yml, which runs on a
+      # schedule and reports by opening an issue.

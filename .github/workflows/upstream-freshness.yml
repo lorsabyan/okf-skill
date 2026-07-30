@@ -1,0 +1,150 @@
+name: Upstream freshness
+
+# Staleness is a function of the calendar, not of this repo's commits, so this
+# runs on a schedule rather than on push. It reports by opening a single issue
+# and keeping it current: created when an upstream concept goes past its
+# stale_after, body refreshed while it stays that way, closed when it clears.
+# Run annotations were the previous mechanism and did not notify anyone.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays, 06:17 UTC
+  workflow_dispatch:
+    inputs:
+      as_of:
+        description: "Evaluate staleness as of this date (YYYY-MM-DD). Blank uses today. Set a future date to exercise the issue path."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  STALENESS_LABEL: upstream-staleness
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Resolve pinned upstream commit
+        run: |
+          # SPEC.md's attribution header is the only place the commit is written.
+          ref=$(sed -n 's|.*blob/\([0-9a-f]\{7,40\}\)/.*|\1|p' okf/references/SPEC.md | head -1)
+          if [ -z "$ref" ]; then
+            echo "::error::could not read a pinned commit from okf/references/SPEC.md"
+            exit 1
+          fi
+          echo "Pinned upstream commit: $ref"
+          echo "KNOWLEDGE_CATALOG_REF=$ref" >> "$GITHUB_ENV"
+
+      - name: Fetch upstream reference bundles
+        run: |
+          git clone --quiet --filter=blob:none --no-checkout \
+            https://github.com/GoogleCloudPlatform/knowledge-catalog.git upstream
+          git -C upstream checkout --quiet "$KNOWLEDGE_CATALOG_REF"
+
+      - name: Collect staleness
+        id: collect
+        run: |
+          as_of="${{ inputs.as_of }}"
+          if [ -n "$as_of" ]; then
+            today_args="--today $as_of"
+            echo "Evaluating as of $as_of (manual override)"
+          else
+            as_of=$(date -u +%F)
+            today_args=""
+            echo "Evaluating as of $as_of"
+          fi
+
+          : > stale.tsv
+          for bundle in upstream/okf/bundles/*/; do
+            name=$(basename "$bundle")
+            # shellcheck disable=SC2086
+            python okf/scripts/validate_okf.py "$bundle" --report $today_args \
+              | grep 'STALE' \
+              | sed "s/^/$name /" \
+              | sed 's/[[:space:]]\{2,\}/ /g' >> stale.tsv || true
+          done
+
+          count=$(wc -l < stale.tsv | tr -d ' ')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "as_of=$as_of" >> "$GITHUB_OUTPUT"
+          echo "Found $count stale concept(s)."
+          cat stale.tsv || true
+
+      - name: Open, refresh, or close the staleness issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COUNT: ${{ steps.collect.outputs.count }}
+          AS_OF: ${{ steps.collect.outputs.as_of }}
+        run: |
+          # Idempotent: the label both marks the issue and is how we find it again,
+          # so a weekly run updates one issue instead of filing a new one.
+          gh label create "$STALENESS_LABEL" \
+            --description "An upstream reference bundle is past its stale_after" \
+            --color D93F0B >/dev/null 2>&1 || true
+
+          existing=$(gh issue list --label "$STALENESS_LABEL" --state open \
+                       --json number --jq '.[0].number // empty')
+
+          if [ "$COUNT" -eq 0 ]; then
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --body \
+                "Cleared as of \`$AS_OF\`: no upstream concept is past its \`stale_after\`. Closing."
+              gh issue close "$existing"
+              echo "Closed #$existing."
+            else
+              echo "Nothing stale, no open issue. Done."
+            fi
+            exit 0
+          fi
+
+          {
+            echo "As of \`$AS_OF\`, **$COUNT** concept(s) in the pinned upstream reference bundles are past their \`stale_after\` (OKF v0.2 §5.5)."
+            echo
+            echo "Pinned upstream commit: \`$KNOWLEDGE_CATALOG_REF\`"
+            echo
+            echo "| Bundle | Concept | Type | Status | Trust | Stale since |"
+            echo "|---|---|---|---|---|---|"
+            # Line shape: <bundle> <path> <type...> <status> <trust> STALE (since <date>)
+            # Counted from the end, because `type` is free text of any word count
+            # and `status` is producer-defined, so neither can anchor a pattern.
+            awk '{
+              d = $NF; sub(/\)$/, "", d)
+              trust = $(NF-3); status = $(NF-4)
+              t = ""
+              for (i = 3; i <= NF-5; i++) t = t (t == "" ? "" : " ") $i
+              printf "| %s | `%s` | %s | %s | %s | %s |\n", $1, $2, t, status, trust, d
+            }' stale.tsv
+            echo
+            echo "### What this means"
+            echo
+            echo "This is upstream's lifecycle event, not a defect in this repo, so CI is **not** failing:"
+            echo "the validator gate deliberately evaluates the bundles as of the pinned \`REFERENCE_AS_OF\`."
+            echo
+            echo "### What to do"
+            echo
+            echo "- If upstream has re-verified these concepts, bump the pinned commit in"
+            echo "  \`okf/references/SPEC.md\`'s attribution header. Everything else derives from it."
+            echo "- If upstream has not, nothing is required here. This issue stays open as a record"
+            echo "  and closes itself once the concepts clear."
+            echo
+            echo "<sub>Maintained automatically by \`.github/workflows/upstream-freshness.yml\`. The body is refreshed on each run.</sub>"
+          } > issue.md
+
+          title="Upstream reference bundles: $COUNT concept(s) past stale_after"
+          if [ -n "$existing" ]; then
+            # Edit rather than comment: keeps one accurate record instead of a
+            # weekly pile of near-identical notifications.
+            gh issue edit "$existing" --title "$title" --body-file issue.md
+            echo "Refreshed #$existing."
+          else
+            gh issue create --title "$title" --label "$STALENESS_LABEL" --body-file issue.md
+          fi
