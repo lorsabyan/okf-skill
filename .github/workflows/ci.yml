@@ -6,10 +6,17 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Pinned so a new upstream commit cannot turn this repo's CI red on its own.
-# Bump together with okf/references/SPEC.md.
 env:
-  KNOWLEDGE_CATALOG_REF: 3fcbb9f
+  # The upstream commit is NOT pinned here — it is read from the attribution
+  # header of okf/references/SPEC.md, the single source of truth, by the
+  # "Resolve pinned upstream commit" step below. To bump upstream, edit that
+  # header only; tests/test_pinned_refs.py fails if any other file lags behind.
+  #
+  # The clock, on the other hand, is pinned here and nowhere else. Upstream's
+  # stale_after dates passing is their lifecycle event, not a defect in this
+  # repo, so the gate evaluates staleness as of a fixed day. The freshness step
+  # reports the real picture without failing.
+  REFERENCE_AS_OF: "2026-07-30"
 
 jobs:
   test:
@@ -35,7 +42,20 @@ jobs:
 
       - name: Tests (offline)
         working-directory: tests
+        env:
+          OKF_AS_OF: ${{ env.REFERENCE_AS_OF }}
         run: python -m unittest discover -s . -t . -v
+
+      - name: Resolve pinned upstream commit
+        run: |
+          # SPEC.md's attribution header is the only place the commit is written.
+          ref=$(sed -n 's|.*blob/\([0-9a-f]\{7,40\}\)/.*|\1|p' okf/references/SPEC.md | head -1)
+          if [ -z "$ref" ]; then
+            echo "::error::could not read a pinned commit from okf/references/SPEC.md"
+            exit 1
+          fi
+          echo "Pinned upstream commit: $ref"
+          echo "KNOWLEDGE_CATALOG_REF=$ref" >> "$GITHUB_ENV"
 
       - name: Fetch upstream reference bundles
         run: |
@@ -46,6 +66,8 @@ jobs:
 
       - name: Tests (including reference bundles)
         working-directory: tests
+        env:
+          OKF_AS_OF: ${{ env.REFERENCE_AS_OF }}
         run: python -m unittest discover -s . -t . -v
 
       - name: Vendored spec matches upstream at the pinned commit
@@ -63,9 +85,33 @@ jobs:
           for bundle in upstream/okf/bundles/*/; do
             name=$(basename "$bundle")
             echo "--- $name"
-            # --today is pinned so upstream's stale_after dates passing cannot
-            # turn this repo's CI red.
-            python okf/scripts/validate_okf.py "$bundle" --strict --today 2026-07-30 || rc=1
+            python okf/scripts/validate_okf.py "$bundle" --strict --today "$REFERENCE_AS_OF" || rc=1
             python okf/scripts/generate_index.py "$bundle" --check || rc=1
           done
           exit $rc
+
+      - name: Upstream bundle freshness (informational)
+        # Runs once, against the real clock, and never fails the build: a stale
+        # upstream bundle is news, not a regression here. Surfaced as annotations
+        # so it is visible without anyone re-reading the pinned gate above.
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
+        continue-on-error: true
+        run: |
+          today=$(date -u +%F)
+          echo "Evaluating upstream bundles as of $today (gate pins $REFERENCE_AS_OF)"
+          stale=0
+          for bundle in upstream/okf/bundles/*/; do
+            name=$(basename "$bundle")
+            while IFS= read -r line; do
+              [ -z "$line" ] && continue
+              stale=$((stale + 1))
+              echo "::notice title=Upstream bundle stale::$name — $line"
+            done < <(python okf/scripts/validate_okf.py "$bundle" --report \
+                       | grep 'STALE' | sed 's/[[:space:]]\{2,\}/ /g')
+          done
+          if [ "$stale" -eq 0 ]; then
+            echo "No upstream concept is past its stale_after as of $today."
+          else
+            echo "::warning::$stale upstream concept(s) are past stale_after as of $today."
+            echo "If upstream has re-verified them, bump the pinned commit in okf/references/SPEC.md."
+          fi
