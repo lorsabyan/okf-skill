@@ -1,0 +1,13 @@
+version: 2
+
+# The skill itself is stdlib-only Python with no package manifest, so there is
+# nothing for a language ecosystem to track. The workflows are the only pinned
+# dependencies this repo has — and they had drifted three majors behind
+# (actions/checkout@v4 was still targeting the deprecated Node 20 runtime).
+
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
