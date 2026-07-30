@@ -140,6 +140,23 @@ All four upstream bundles (`ga4`, `stackoverflow`, `crypto_bitcoin`,
 the index generator is a no-op on every one of them. CI also diffs the vendored
 `SPEC.md` against upstream at the pinned commit, so the two cannot drift.
 
+## Maintenance
+
+**Bumping the vendored spec.** The upstream commit is pinned in exactly one
+place: the attribution header of `okf/references/SPEC.md`. To move to a newer
+upstream revision, replace the spec body and edit that header — CI reads the
+commit from it, and `tests/test_pinned_refs.py` fails if the README or anything
+else still cites the old one. There is no second copy to remember.
+
+**The pinned clock.** CI evaluates the reference bundles as of
+`REFERENCE_AS_OF` in the workflow, not the real date, so upstream's
+`stale_after` dates passing cannot turn this repo's builds red — that is
+upstream's lifecycle event, not a regression here. A separate non-fatal step
+runs against the real clock and posts a notice for every upstream concept that
+has gone stale, so you find out without the build failing. The same date is
+handed to the test suite as `OKF_AS_OF`, so the gate and the tests cannot
+disagree.
+
 ## Related
 
 - [okf-reader](https://github.com/lorsabyan/okf-reader) — static-first web app
