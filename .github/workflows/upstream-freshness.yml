@@ -1,10 +1,23 @@
 name: Upstream freshness
 
-# Staleness is a function of the calendar, not of this repo's commits, so this
-# runs on a schedule rather than on push. It reports by opening a single issue
-# and keeping it current: created when an upstream concept goes past its
-# stale_after, body refreshed while it stays that way, closed when it clears.
-# Run annotations were the previous mechanism and did not notify anyone.
+# Two ways of following upstream, both functions of upstream's clock and
+# upstream's commits rather than of this repo's, so both run on a schedule
+# rather than on push:
+#
+#   freshness   — an upstream concept went past its stale_after.
+#   spec-drift  — upstream moved ahead of the commit this repo pins.
+#
+# Each reports by opening a single labelled issue and keeping it current:
+# created when the condition starts holding, body refreshed while it holds,
+# closed when it clears. Run annotations were the previous mechanism and did
+# not notify anyone.
+#
+# spec-drift exists because of a real miss. Upstream tightened SPEC §5 to
+# require ISO 8601 datetimes on 2026-08-20 WITHOUT bumping okf_version, and
+# nothing here noticed for a month: ci.yml compares the vendored spec against
+# the PINNED commit, and freshness evaluates bundles AT the pinned commit, so
+# both are blind to upstream moving on. The version field cannot be trusted to
+# announce a spec change; only a diff can.
 
 on:
   schedule:
@@ -22,6 +35,7 @@ permissions:
 
 env:
   STALENESS_LABEL: upstream-staleness
+  DRIFT_LABEL: upstream-spec-drift
 
 jobs:
   freshness:
@@ -42,13 +56,13 @@ jobs:
             exit 1
           fi
           echo "Pinned upstream commit: $ref"
-          echo "KNOWLEDGE_CATALOG_REF=$ref" >> "$GITHUB_ENV"
+          echo "OKF_UPSTREAM_REF=$ref" >> "$GITHUB_ENV"
 
       - name: Fetch upstream reference bundles
         run: |
           git clone --quiet --filter=blob:none --no-checkout \
-            https://github.com/GoogleCloudPlatform/knowledge-catalog.git upstream
-          git -C upstream checkout --quiet "$KNOWLEDGE_CATALOG_REF"
+            https://github.com/GoogleCloudPlatform/open-knowledge-format.git upstream
+          git -C upstream checkout --quiet "$OKF_UPSTREAM_REF"
 
       - name: Collect staleness
         id: collect
@@ -64,7 +78,7 @@ jobs:
           fi
 
           : > stale.tsv
-          for bundle in upstream/okf/bundles/*/; do
+          for bundle in upstream/bundles/*/; do
             name=$(basename "$bundle")
             # shellcheck disable=SC2086
             python okf/scripts/validate_okf.py "$bundle" --report $today_args \
@@ -109,7 +123,7 @@ jobs:
           {
             echo "As of \`$AS_OF\`, **$COUNT** concept(s) in the pinned upstream reference bundles are past their \`stale_after\` (OKF v0.2 §5.5)."
             echo
-            echo "Pinned upstream commit: \`$KNOWLEDGE_CATALOG_REF\`"
+            echo "Pinned upstream commit: \`$OKF_UPSTREAM_REF\`"
             echo
             echo "| Bundle | Concept | Type | Status | Trust | Stale since |"
             echo "|---|---|---|---|---|---|"
@@ -147,4 +161,133 @@ jobs:
             echo "Refreshed #$existing."
           else
             gh issue create --title "$title" --label "$STALENESS_LABEL" --body-file issue.md
+          fi
+
+  spec-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve pinned upstream commit
+        run: |
+          # SPEC.md's attribution header is the only place the commit is written.
+          # Derived here as well as in the freshness job so the two stay
+          # independent: a failure in one should not blind the other.
+          ref=$(sed -n 's|.*blob/\([0-9a-f]\{7,40\}\)/.*|\1|p' okf/references/SPEC.md | head -1)
+          if [ -z "$ref" ]; then
+            echo "::error::could not read a pinned commit from okf/references/SPEC.md"
+            exit 1
+          fi
+          echo "Pinned upstream commit: $ref"
+          echo "OKF_UPSTREAM_REF=$ref" >> "$GITHUB_ENV"
+
+      - name: Compare the pin against upstream's default branch
+        id: drift
+        run: |
+          # blob:none keeps this cheap: --name-only and rev-list need trees and
+          # commits, not file contents.
+          git clone --quiet --filter=blob:none --no-checkout \
+            https://github.com/GoogleCloudPlatform/open-knowledge-format.git upstream
+
+          head=$(git -C upstream rev-parse HEAD)
+          echo "Upstream default branch: $head"
+
+          # Fails loudly if the pin is not an ancestor — a rewritten upstream
+          # history or a bad pin is a different problem from ordinary drift,
+          # and silently reporting "0 commits behind" would hide it.
+          if ! git -C upstream merge-base --is-ancestor "$OKF_UPSTREAM_REF" "$head"; then
+            echo "::error::pinned commit $OKF_UPSTREAM_REF is not an ancestor of $head"
+            exit 1
+          fi
+
+          behind=$(git -C upstream rev-list --count "$OKF_UPSTREAM_REF..$head")
+          git -C upstream diff --name-only "$OKF_UPSTREAM_REF" "$head" > changed.txt || true
+          git -C upstream log --reverse --format='- `%h` %s' "$OKF_UPSTREAM_REF..$head" > commits.md || true
+
+          # SPEC.md changing is the signal that needs a human; everything else
+          # is upstream iterating on its own tooling.
+          if grep -qx 'SPEC.md' changed.txt; then spec=yes; else spec=no; fi
+
+          {
+            echo "behind=$behind"
+            echo "spec=$spec"
+            echo "head=$head"
+          } >> "$GITHUB_OUTPUT"
+          echo "$behind commit(s) ahead of the pin; SPEC.md changed: $spec"
+          cat changed.txt || true
+
+      - name: Open, refresh, or close the drift issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEHIND: ${{ steps.drift.outputs.behind }}
+          SPEC_CHANGED: ${{ steps.drift.outputs.spec }}
+          HEAD_SHA: ${{ steps.drift.outputs.head }}
+        run: |
+          gh label create "$DRIFT_LABEL" \
+            --description "Upstream OKF has moved ahead of the commit this repo pins" \
+            --color 1D76DB >/dev/null 2>&1 || true
+
+          existing=$(gh issue list --label "$DRIFT_LABEL" --state open \
+                       --json number --jq '.[0].number // empty')
+
+          if [ "$BEHIND" -eq 0 ]; then
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --body \
+                "The pin now matches upstream's default branch. Closing."
+              gh issue close "$existing"
+              echo "Closed #$existing."
+            else
+              echo "Pin is current, no open issue. Done."
+            fi
+            exit 0
+          fi
+
+          if [ "$SPEC_CHANGED" = "yes" ]; then
+            title="Upstream OKF spec changed: $BEHIND commit(s) since the pin"
+          else
+            title="Upstream OKF moved ahead: $BEHIND commit(s) since the pin"
+          fi
+
+          {
+            echo "Pinned: \`$OKF_UPSTREAM_REF\` — upstream default branch: \`${HEAD_SHA:0:7}\`, **$BEHIND** commit(s) ahead."
+            echo
+            if [ "$SPEC_CHANGED" = "yes" ]; then
+              echo "> [!IMPORTANT]"
+              echo "> **\`SPEC.md\` is among the changed files.** Read the diff before assuming"
+              echo "> nothing is required: upstream has tightened the format without bumping"
+              echo "> \`okf_version\` before, so the declared version is not a reliable signal."
+            else
+              echo "\`SPEC.md\` is unchanged, so this is upstream iterating on its own tooling,"
+              echo "bundles, or samples. Usually nothing is required here."
+            fi
+            echo
+            echo "### Changed paths"
+            echo
+            echo '```'
+            cat changed.txt
+            echo '```'
+            echo
+            echo "### Commits"
+            echo
+            cat commits.md
+            echo
+            echo "### What to do"
+            echo
+            echo "- Nothing is failing. This is a notification, not a gate."
+            echo "- To take the update: replace the spec body and edit the attribution header of"
+            echo "  \`okf/references/SPEC.md\`. Everything else derives from it, and"
+            echo "  \`tests/test_pinned_refs.py\` fails if any citation lags behind."
+            echo "- Re-run the validator against the new reference bundles before bumping —"
+            echo "  a format change with no version bump shows up there first."
+            echo
+            echo "[Compare on GitHub](https://github.com/GoogleCloudPlatform/open-knowledge-format/compare/$OKF_UPSTREAM_REF...$HEAD_SHA)"
+            echo
+            echo "<sub>Maintained automatically by \`.github/workflows/upstream-freshness.yml\`. The body is refreshed on each run.</sub>"
+          } > issue.md
+
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --title "$title" --body-file issue.md
+            echo "Refreshed #$existing."
+          else
+            gh issue create --title "$title" --label "$DRIFT_LABEL" --body-file issue.md
           fi

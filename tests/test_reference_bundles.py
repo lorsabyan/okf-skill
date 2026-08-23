@@ -1,12 +1,12 @@
 """Validate the upstream reference bundles — the strongest regression signal.
 
 Skipped unless the bundles are available locally, so the suite stays offline by
-default. CI clones knowledge-catalog at the pinned commit and points
-OKF_REFERENCE_BUNDLES at its okf/bundles directory.
+default. CI clones open-knowledge-format at the pinned commit and points
+OKF_REFERENCE_BUNDLES at its bundles directory.
 
-    git clone https://github.com/GoogleCloudPlatform/knowledge-catalog
-    cd knowledge-catalog && git checkout 3fcbb9f
-    OKF_REFERENCE_BUNDLES=$PWD/okf/bundles python3 -m unittest discover tests
+    git clone https://github.com/GoogleCloudPlatform/open-knowledge-format
+    cd open-knowledge-format && git checkout ad30107
+    OKF_REFERENCE_BUNDLES=$PWD/bundles python3 -m unittest discover tests
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ EXPECTED = ("ga4", "stackoverflow", "crypto_bitcoin", "acme_retail")
 AS_OF = date.fromisoformat(os.environ.get("OKF_AS_OF") or "2026-07-30")
 
 
-@unittest.skipUnless(BUNDLES, "set OKF_REFERENCE_BUNDLES to the upstream okf/bundles directory")
+@unittest.skipUnless(BUNDLES, "set OKF_REFERENCE_BUNDLES to the upstream bundles directory")
 class ReferenceBundles(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

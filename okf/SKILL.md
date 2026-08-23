@@ -45,13 +45,13 @@ tags: [sales, orders]
 generated: { by: reference_agent/gemini-2.5-pro, at: 2026-07-13T00:00:00Z }
 verified: { by: human:ahormati, at: 2026-07-14T09:00:00Z }
 status: stable                  # draft | stable | deprecated
-stale_after: 2026-12-31         # absolute date; stale when today >= this
+stale_after: 2026-12-31T00:00:00Z   # absolute instant; stale when now >= this
 sources:
   - id: bq-schema
     resource: https://console.cloud.google.com/bigquery?p=acme&d=sales&t=orders
     title: BigQuery table schema
     author: team:data-platform
-    last_modified: 2026-07-01
+    last_modified: 2026-07-01T00:00:00Z
 # any extra producer-defined keys are allowed
 ---
 
@@ -130,11 +130,18 @@ verified one. Never reject a concept for missing them.
 | Field | Shape | Meaning |
 |---|---|---|
 | `sources` | list of `{ id, resource, title, author, usage_count, last_modified }` | What the concept derives from. `resource` is required within an entry. |
-| `usage_window` | `{ from, to }`, sibling of `sources` | Date range framing every `usage_count`. |
+| `usage_window` | `{ from, to }`, sibling of `sources` | Datetime range framing every `usage_count`. |
 | `generated` | `{ by, at }` | How the current content was produced. `by` is required; `at` is the last meaningful content change. |
 | `verified` | list of `{ by, at }` | Who confirmed the content. A bare mapping counts as a one-element list. |
 | `status` | `draft` \| `stable` \| `deprecated` | Absent ⇒ `stable`. |
-| `stale_after` | `YYYY-MM-DD` | Stale when `today >= stale_after`. Absolute, never a relative TTL. |
+| `stale_after` | ISO 8601 timestamp | Stale when `now >= stale_after`. Absolute, never a relative TTL. |
+
+**Timestamp convention** for every timestamp-valued key (`generated.at`,
+`verified[].at`, `stale_after`, `sources[].last_modified`, `usage_window.from`
+and `.to`): an ISO 8601 datetime with an explicit offset — `2026-06-30T14:00:00Z`.
+Write that form. A bare `YYYY-MM-DD` is still read without complaint, because
+bundles predating this rule declare the same `okf_version`. The one exception is
+`log.md` date headings (§9), which stay `YYYY-MM-DD`.
 
 **Actor convention** for every `by` field: `<producer>/<version>` for agents
 and tools (`reference_agent/gemini-2.5-pro`), `human:<id>` for a person
@@ -180,7 +187,7 @@ executor:
 attester:
   resource: references/attesters/revenue.py
 status: stable
-stale_after: 2026-09-23
+stale_after: 2026-09-23T00:00:00Z
 ---
 
 # Computation

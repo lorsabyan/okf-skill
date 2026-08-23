@@ -4,7 +4,7 @@
 
 An [Agent Skill](https://agentskills.io) that teaches coding agents — **Claude Code** and
 **OpenAI Codex** — to author, validate, and consume
-[Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/3fcbb9f/okf/SPEC.md)
+[Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/ad30107/SPEC.md)
 knowledge bundles: directories of markdown files with YAML frontmatter that describe
 datasets, tables, metrics, APIs, playbooks, and attested computations.
 
@@ -14,7 +14,7 @@ datasets, tables, metrics, APIs, playbooks, and attested computations.
 okf/                            # this directory is the skill; symlink or copy it
 ├── SKILL.md                    # format quick-reference + authoring/validating/consuming workflows
 ├── references/
-│   └── SPEC.md                 # full OKF v0.2 spec (verbatim from GoogleCloudPlatform/knowledge-catalog)
+│   └── SPEC.md                 # full OKF v0.2 spec (verbatim from GoogleCloudPlatform/open-knowledge-format)
 └── scripts/
     ├── validate_okf.py         # conformance validator + trust/freshness report (exit 0 = conformant)
     └── generate_index.py       # index.md generator; non-destructive, --check for CI
@@ -132,7 +132,7 @@ The reference-bundle tests are skipped unless you point them at a local
 checkout — CI clones upstream at the pinned commit:
 
 ```sh
-OKF_REFERENCE_BUNDLES=/path/to/knowledge-catalog/okf/bundles python3 -m unittest discover -s . -t .
+OKF_REFERENCE_BUNDLES=/path/to/open-knowledge-format/bundles python3 -m unittest discover -s . -t .
 ```
 
 All four upstream bundles (`ga4`, `stackoverflow`, `crypto_bitcoin`,
@@ -197,6 +197,19 @@ To exercise it without waiting, dispatch it with a future date:
 gh workflow run upstream-freshness.yml -f as_of=2027-01-01
 ```
 
+**Upstream drift.** The same workflow's `spec-drift` job compares the pin
+against the official repository's default branch and maintains an issue
+labelled `upstream-spec-drift`. It is the only check here that looks at
+upstream's default branch: CI diffs the vendored spec against the *pinned*
+commit, and the freshness job evaluates bundles *at* the pinned commit, so both
+are structurally blind to upstream moving on.
+
+That blindness cost a month. Upstream tightened §5 to require ISO 8601
+datetimes on 2026-08-20 **without bumping `okf_version`**, and nothing noticed
+until someone looked by hand. So the issue body flags a changed `SPEC.md`
+prominently and says outright that the version field is not a reliable signal —
+a bundles-only change stays quiet. Like staleness, it never fails a build.
+
 ## Versioning
 
 Releases are tagged and documented in [CHANGELOG.md](CHANGELOG.md).
@@ -242,6 +255,11 @@ validators are independently written, which is what makes the
 ## License
 
 Apache 2.0. `okf/references/SPEC.md` is reproduced verbatim from
-[GoogleCloudPlatform/knowledge-catalog](https://github.com/GoogleCloudPlatform/knowledge-catalog)
-at commit `3fcbb9f` (Copyright Google LLC, Apache 2.0); everything else in
+[GoogleCloudPlatform/open-knowledge-format](https://github.com/GoogleCloudPlatform/open-knowledge-format)
+at commit `ad30107` (Copyright Google LLC, Apache 2.0); everything else in
 this repo is original.
+
+OKF used to live in `okf/` inside
+[GoogleCloudPlatform/knowledge-catalog](https://github.com/GoogleCloudPlatform/knowledge-catalog);
+upstream moved it to its own repository in August 2026 and marked that directory
+a frozen snapshot, so the pin above follows the format to its new home.
