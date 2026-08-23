@@ -197,6 +197,19 @@ To exercise it without waiting, dispatch it with a future date:
 gh workflow run upstream-freshness.yml -f as_of=2027-01-01
 ```
 
+**Upstream drift.** The same workflow's `spec-drift` job compares the pin
+against the official repository's default branch and maintains an issue
+labelled `upstream-spec-drift`. It is the only check here that looks at
+upstream's default branch: CI diffs the vendored spec against the *pinned*
+commit, and the freshness job evaluates bundles *at* the pinned commit, so both
+are structurally blind to upstream moving on.
+
+That blindness cost a month. Upstream tightened §5 to require ISO 8601
+datetimes on 2026-08-20 **without bumping `okf_version`**, and nothing noticed
+until someone looked by hand. So the issue body flags a changed `SPEC.md`
+prominently and says outright that the version field is not a reliable signal —
+a bundles-only change stays quiet. Like staleness, it never fails a build.
+
 ## Versioning
 
 Releases are tagged and documented in [CHANGELOG.md](CHANGELOG.md).

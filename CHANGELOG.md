@@ -33,6 +33,14 @@ always the one pinned in `okf/references/SPEC.md`'s attribution header.
 
 ### Added
 
+- **A `spec-drift` job that watches the official repository's default branch.**
+  Nothing here did. `ci.yml` diffs the vendored spec against the *pinned*
+  commit and the freshness job evaluates bundles *at* the pinned commit, so
+  both are blind by construction to upstream moving ahead — which is why the
+  §5 change sat unnoticed from 2026-08-20 until it was found by hand. The job
+  maintains one issue labelled `upstream-spec-drift`, singles out a changed
+  `SPEC.md` from ordinary upstream churn, and states that `okf_version` is not
+  a reliable signal of a format change. It never fails a build.
 - `usage_window.from` and `.to` are checked as timestamps. Only the presence of
   the two keys was validated before; their values were never looked at.
 - `SKILL.md` states the timestamp convention and its one exception. The two

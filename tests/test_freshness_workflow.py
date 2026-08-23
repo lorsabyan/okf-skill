@@ -1,10 +1,15 @@
-"""Tests for the upstream-freshness workflow.
+"""Tests for the upstream-freshness workflow and its two jobs.
 
 The workflow files up an issue, so its failure modes are obnoxious rather than
 invisible: filing a duplicate every week, or failing a build over something that
 is upstream's lifecycle event. These assert the properties that prevent both,
 and exercise the table formatter on real validator output — including a line
 shape that would break a naive pattern.
+
+The spec-drift job is tested the same way, and matters more than its size
+suggests: it is the only thing here that looks at upstream's default branch at
+all. Everything else — ci.yml's vendored-spec diff, the freshness job — reads
+upstream AT the pinned commit and is structurally blind to upstream moving on.
 """
 
 from __future__ import annotations
@@ -63,6 +68,35 @@ class WorkflowShape(unittest.TestCase):
 
     def test_creates_its_label_idempotently(self):
         self.assertIn("gh label create", WORKFLOW)
+
+    def test_has_a_spec_drift_job(self):
+        self.assertIn("spec-drift:", WORKFLOW)
+        self.assertIn("DRIFT_LABEL", WORKFLOW)
+
+    def test_drift_job_compares_against_upstreams_default_branch(self):
+        """The point of the job: every other check reads upstream at the pinned
+        commit, which cannot reveal that the pin is behind."""
+        self.assertIn("rev-parse HEAD", WORKFLOW)
+        self.assertIn('rev-list --count "$OKF_UPSTREAM_REF..$head"', WORKFLOW)
+
+    def test_drift_job_targets_the_official_repository(self):
+        self.assertIn("GoogleCloudPlatform/open-knowledge-format.git", WORKFLOW)
+        self.assertNotIn("knowledge-catalog.git", WORKFLOW)
+
+    def test_drift_job_singles_out_a_spec_change(self):
+        """A bundles-only change is upstream iterating; SPEC.md changing is the
+        one that needs a person to read a diff."""
+        self.assertIn("grep -qx 'SPEC.md' changed.txt", WORKFLOW)
+
+    def test_drift_job_rejects_a_pin_that_is_not_an_ancestor(self):
+        """Rewritten upstream history would otherwise report '0 commits ahead'
+        and read as 'the pin is current'."""
+        self.assertIn("merge-base --is-ancestor", WORKFLOW)
+
+    def test_the_two_jobs_use_different_labels(self):
+        """One label for both would make each job close the other's issue."""
+        self.assertIn("STALENESS_LABEL: upstream-staleness", WORKFLOW)
+        self.assertIn("DRIFT_LABEL: upstream-spec-drift", WORKFLOW)
 
     def test_ci_no_longer_duplicates_the_staleness_check(self):
         """Two copies of this logic is the duplication problem we just removed."""
@@ -214,6 +248,90 @@ class IssueLifecycle(unittest.TestCase):
     def test_label_is_created_before_it_is_used(self):
         log, _, _ = self.run_step(count=7)
         self.assertLess(log.index("label create"), log.index("issue list"))
+
+
+class DriftIssueLifecycle(unittest.TestCase):
+    """Same four states as IssueLifecycle, for the drift issue."""
+
+    SCRIPT = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.SCRIPT = extract_run_block("Open, refresh, or close the drift issue")
+
+    def run_step(self, behind: int, spec_changed: str = "no", existing: str = ""):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            calls = work / "calls.log"
+            stub = work / "bin" / "gh"
+            stub.parent.mkdir()
+            stub.write_text(
+                "#!/bin/sh\n"
+                f'echo "$@" >> "{calls}"\n'
+                'if [ "$1" = "issue" ] && [ "$2" = "list" ]; then\n'
+                f'  printf "%s" "{existing}"\n'
+                "fi\n"
+                "exit 0\n"
+            )
+            stub.chmod(0o755)
+            (work / "changed.txt").write_text("SPEC.md\nbundles/ga4/index.md\n")
+            (work / "commits.md").write_text("- `abc1234` some upstream change\n")
+            result = subprocess.run(
+                ["bash", "-c", self.SCRIPT],
+                cwd=work,
+                capture_output=True,
+                text=True,
+                env={
+                    "PATH": f"{stub.parent}:/usr/bin:/bin:/usr/sbin:/sbin",
+                    "DRIFT_LABEL": "upstream-spec-drift",
+                    "OKF_UPSTREAM_REF": "25461db",
+                    "HEAD_SHA": "ad30107c31c06aec8a7d5636e0d1058118604e6f",
+                    "BEHIND": str(behind),
+                    "SPEC_CHANGED": spec_changed,
+                },
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            log = calls.read_text() if calls.exists() else ""
+            body = (work / "issue.md").read_text() if (work / "issue.md").exists() else ""
+            return log, body, result.stdout
+
+    def test_behind_and_no_open_issue_creates_one(self):
+        log, body, _ = self.run_step(behind=4, spec_changed="yes")
+        self.assertIn("issue create", log)
+        self.assertNotIn("issue edit", log)
+        self.assertIn("**4** commit(s) ahead", body)
+
+    def test_behind_with_an_open_issue_edits_instead_of_duplicating(self):
+        log, _, _ = self.run_step(behind=2, existing="42")
+        self.assertIn("issue edit 42", log)
+        self.assertNotIn("issue create", log)
+
+    def test_caught_up_closes_the_open_issue(self):
+        log, _, _ = self.run_step(behind=0, existing="42")
+        self.assertIn("issue close 42", log)
+
+    def test_caught_up_with_nothing_open_does_nothing(self):
+        log, _, out = self.run_step(behind=0)
+        self.assertNotIn("issue create", log)
+        self.assertNotIn("issue close", log)
+        self.assertIn("Pin is current", out)
+
+    def test_a_spec_change_is_called_out_prominently(self):
+        """The whole reason the job exists: upstream tightened §5 without a
+        version bump, so 'okf_version is unchanged' must not read as 'nothing
+        to do'."""
+        _log, body, _ = self.run_step(behind=4, spec_changed="yes")
+        self.assertIn("[!IMPORTANT]", body)
+        self.assertIn("without bumping", body)
+
+    def test_a_bundles_only_change_is_not_escalated(self):
+        _log, body, _ = self.run_step(behind=1, spec_changed="no")
+        self.assertNotIn("[!IMPORTANT]", body)
+        self.assertIn("`SPEC.md` is unchanged", body)
+
+    def test_body_links_to_the_upstream_comparison(self):
+        _log, body, _ = self.run_step(behind=4, spec_changed="yes")
+        self.assertIn("open-knowledge-format/compare/25461db...", body)
 
 
 if __name__ == "__main__":
