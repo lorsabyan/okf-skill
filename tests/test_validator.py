@@ -246,6 +246,60 @@ class TrustAndLifecycle(BundleCase):
             "a.md": "---\ntype: Metric\ndescription: first\nstale_after: 2026-07-30\n---\n\nBody.\n",
         }, today=date(2026, 7, 30))
 
+    def test_stale_after_as_an_iso_datetime_is_clean(self):
+        """§5 asks for a datetime with an explicit offset (ad30107). The old
+        bare-date check warned on the very form upstream now writes."""
+        self.assertClean({
+            "index.md": "# Root\n\n* [A](a.md) - first\n",
+            "a.md": "---\ntype: Metric\ndescription: first\nstale_after: 2026-12-31T00:00:00Z\n---\n\nBody.\n",
+        }, today=date(2026, 7, 30))
+
+    def test_stale_after_as_a_datetime_still_compares_by_day(self):
+        self.assertWarningMatches("stale since 2026-06-30", {
+            "index.md": "# Root\n\n* [A](a.md) - first\n",
+            "a.md": "---\ntype: Metric\ndescription: first\nstale_after: 2026-06-30T14:00:00Z\n---\n\nBody.\n",
+        }, today=date(2026, 7, 30))
+
+    def test_stale_after_that_is_neither_date_nor_datetime_warns(self):
+        self.assertWarningMatches("'stale_after' should be an absolute ISO 8601 timestamp", {
+            "index.md": "# Root\n\n* [A](a.md) - first\n",
+            "a.md": "---\ntype: Metric\ndescription: first\nstale_after: in 90 days\n---\n\nBody.\n",
+        }, today=date(2026, 7, 30))
+
+    def test_last_modified_accepts_both_a_date_and_a_datetime(self):
+        for value in ("2026-06-15", "2026-06-15T00:00:00Z", "2026-06-15T00:00:00+04:00"):
+            with self.subTest(last_modified=value):
+                self.assertClean({
+                    "index.md": "# Root\n\n* [A](a.md) - first\n",
+                    "a.md": (
+                        "---\ntype: Metric\ndescription: first\n"
+                        f"sources:\n  - id: s\n    resource: https://example.test/s\n    last_modified: {value}\n"
+                        "---\n\nBody.\n"
+                    ),
+                })
+
+    def test_usage_window_edges_are_checked_as_timestamps(self):
+        self.assertWarningMatches("'usage_window.to' should be an ISO 8601 timestamp", {
+            "index.md": "# Root\n\n* [A](a.md) - first\n",
+            "a.md": (
+                "---\ntype: Metric\ndescription: first\n"
+                "sources:\n  - id: s\n    resource: https://example.test/s\n    usage_count: 5\n"
+                "usage_window: { from: 2026-06-01T00:00:00Z, to: last Tuesday }\n"
+                "---\n\nBody.\n"
+            ),
+        })
+
+    def test_usage_window_with_iso_datetime_edges_is_clean(self):
+        self.assertClean({
+            "index.md": "# Root\n\n* [A](a.md) - first\n",
+            "a.md": (
+                "---\ntype: Metric\ndescription: first\n"
+                "sources:\n  - id: s\n    resource: https://example.test/s\n    usage_count: 5\n"
+                "usage_window: { from: 2026-06-01T00:00:00Z, to: 2026-06-30T00:00:00Z }\n"
+                "---\n\nBody.\n"
+            ),
+        })
+
     def test_report_rows(self):
         bundle(self.root, {
             "index.md": "# Root\n\n* [A](a.md) - first\n",

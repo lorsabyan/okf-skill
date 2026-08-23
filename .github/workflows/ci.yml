@@ -55,14 +55,14 @@ jobs:
             exit 1
           fi
           echo "Pinned upstream commit: $ref"
-          echo "KNOWLEDGE_CATALOG_REF=$ref" >> "$GITHUB_ENV"
+          echo "OKF_UPSTREAM_REF=$ref" >> "$GITHUB_ENV"
 
       - name: Fetch upstream reference bundles
         run: |
           git clone --quiet --filter=blob:none --no-checkout \
-            https://github.com/GoogleCloudPlatform/knowledge-catalog.git upstream
-          git -C upstream checkout --quiet "$KNOWLEDGE_CATALOG_REF"
-          echo "OKF_REFERENCE_BUNDLES=$PWD/upstream/okf/bundles" >> "$GITHUB_ENV"
+            https://github.com/GoogleCloudPlatform/open-knowledge-format.git upstream
+          git -C upstream checkout --quiet "$OKF_UPSTREAM_REF"
+          echo "OKF_REFERENCE_BUNDLES=$PWD/upstream/bundles" >> "$GITHUB_ENV"
 
       - name: Tests (including reference bundles)
         working-directory: tests
@@ -83,15 +83,15 @@ jobs:
         run: |
           # Everything after the attribution header must be byte-identical.
           tail -n +6 okf/references/SPEC.md > /tmp/vendored.md
-          if ! diff -u upstream/okf/SPEC.md /tmp/vendored.md; then
-            echo "::error::okf/references/SPEC.md has drifted from upstream at $KNOWLEDGE_CATALOG_REF"
+          if ! diff -u upstream/SPEC.md /tmp/vendored.md; then
+            echo "::error::okf/references/SPEC.md has drifted from upstream at $OKF_UPSTREAM_REF"
             exit 1
           fi
 
       - name: Validator runs clean on every reference bundle
         run: |
           rc=0
-          for bundle in upstream/okf/bundles/*/; do
+          for bundle in upstream/bundles/*/; do
             name=$(basename "$bundle")
             echo "--- $name"
             python okf/scripts/validate_okf.py "$bundle" --strict --today "$REFERENCE_AS_OF" || rc=1

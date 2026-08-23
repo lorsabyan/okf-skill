@@ -42,13 +42,13 @@ jobs:
             exit 1
           fi
           echo "Pinned upstream commit: $ref"
-          echo "KNOWLEDGE_CATALOG_REF=$ref" >> "$GITHUB_ENV"
+          echo "OKF_UPSTREAM_REF=$ref" >> "$GITHUB_ENV"
 
       - name: Fetch upstream reference bundles
         run: |
           git clone --quiet --filter=blob:none --no-checkout \
-            https://github.com/GoogleCloudPlatform/knowledge-catalog.git upstream
-          git -C upstream checkout --quiet "$KNOWLEDGE_CATALOG_REF"
+            https://github.com/GoogleCloudPlatform/open-knowledge-format.git upstream
+          git -C upstream checkout --quiet "$OKF_UPSTREAM_REF"
 
       - name: Collect staleness
         id: collect
@@ -64,7 +64,7 @@ jobs:
           fi
 
           : > stale.tsv
-          for bundle in upstream/okf/bundles/*/; do
+          for bundle in upstream/bundles/*/; do
             name=$(basename "$bundle")
             # shellcheck disable=SC2086
             python okf/scripts/validate_okf.py "$bundle" --report $today_args \
@@ -109,7 +109,7 @@ jobs:
           {
             echo "As of \`$AS_OF\`, **$COUNT** concept(s) in the pinned upstream reference bundles are past their \`stale_after\` (OKF v0.2 §5.5)."
             echo
-            echo "Pinned upstream commit: \`$KNOWLEDGE_CATALOG_REF\`"
+            echo "Pinned upstream commit: \`$OKF_UPSTREAM_REF\`"
             echo
             echo "| Bundle | Concept | Type | Status | Trust | Stale since |"
             echo "|---|---|---|---|---|---|"

@@ -50,8 +50,15 @@ def is_iso_date(value: object) -> bool:
 
 
 def is_iso_datetime(value: object) -> bool:
-    """A calendar-valid ISO 8601 datetime; a bare date is accepted. 'Z' is
-    normalized because fromisoformat only accepts it from Python 3.11."""
+    """A calendar-valid ISO 8601 timestamp; a bare date is accepted.
+
+    §5 now asks for a datetime with an explicit offset ('2026-06-30T14:00:00Z'),
+    tightened upstream in open-knowledge-format@ad30107 without an `okf_version`
+    bump. Bare 'YYYY-MM-DD' stays acceptable rather than becoming a warning:
+    bundles written against the earlier v0.2 text declare the same version and
+    are not retroactively non-conformant.
+
+    'Z' is normalized because fromisoformat only accepts it from Python 3.11."""
     text = str(value).strip()
     if text.endswith(("Z", "z")):
         text = text[:-1] + "+00:00"
@@ -78,7 +85,12 @@ def trust_tier(frontmatter: dict) -> str:
 
 def stale_since(frontmatter: dict, today: date) -> date | None:
     """The `stale_after` date when the concept is stale on `today`, else None
-    (SPEC §5.5: stale when today >= stale_after)."""
+    (SPEC §5.5: stale when today >= stale_after).
+
+    `stale_after` carries a time component since ad30107, but the comparison
+    stays at day granularity to match `--today`. A deadline later the same day
+    therefore reads as stale from midnight — erring toward reporting staleness,
+    which is the safe direction for a warning."""
     raw = frontmatter.get("stale_after")
     if not raw:
         return None
@@ -499,8 +511,8 @@ def _check_lifecycle(rel, fm, warnings, today) -> None:
     if status and str(status).strip().lower() not in STATUS_VALUES:
         warnings.append(f"{rel}: 'status' is {status!r}; §5.4 defines {', '.join(sorted(STATUS_VALUES))}")
     stale_after = fm.get("stale_after")
-    if stale_after and not is_iso_date(stale_after):
-        warnings.append(f"{rel}: 'stale_after' should be an absolute 'YYYY-MM-DD' date (§5.5), found {stale_after!r}")
+    if stale_after and not is_iso_datetime(stale_after):
+        warnings.append(f"{rel}: 'stale_after' should be an absolute ISO 8601 timestamp (§5.5), found {stale_after!r}")
     else:
         deadline = stale_since(fm, today)
         if deadline:
@@ -515,15 +527,20 @@ def _check_sources(rel, fm, warnings) -> None:
         if not entry.get("resource"):
             warnings.append(f"{rel}: 'sources[{n}]' has no 'resource', which is required within an entry (§5.1)")
         last_modified = entry.get("last_modified")
-        if last_modified and not is_iso_date(last_modified):
-            warnings.append(f"{rel}: 'sources[{n}].last_modified' should be 'YYYY-MM-DD' (§5.1), found {last_modified!r}")
+        if last_modified and not is_iso_datetime(last_modified):
+            warnings.append(f"{rel}: 'sources[{n}].last_modified' should be an ISO 8601 timestamp (§5.1), found {last_modified!r}")
         usage_count = entry.get("usage_count")
         if usage_count is not None and not re.fullmatch(r"\d+", str(usage_count)):
             warnings.append(f"{rel}: 'sources[{n}].usage_count' should be a number (§5.1), found {usage_count!r}")
 
     window = fm.get("usage_window")
     if window is not None and not (isinstance(window, dict) and window.get("from") and window.get("to")):
-        warnings.append(f"{rel}: 'usage_window' should be a mapping with 'from' and 'to' dates (§5.1)")
+        warnings.append(f"{rel}: 'usage_window' should be a mapping with 'from' and 'to' timestamps (§5.1)")
+    elif isinstance(window, dict):
+        for edge in ("from", "to"):
+            value = window.get(edge)
+            if value and not is_iso_datetime(value):
+                warnings.append(f"{rel}: 'usage_window.{edge}' should be an ISO 8601 timestamp (§5.1), found {value!r}")
 
 
 def _check_paths(bundle, path, rel, fm, warnings) -> None:

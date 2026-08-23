@@ -174,7 +174,7 @@ class IssueLifecycle(unittest.TestCase):
                     "STALENESS_LABEL": "upstream-staleness",
                     "COUNT": str(count),
                     "AS_OF": "2027-01-01",
-                    "KNOWLEDGE_CATALOG_REF": "3fcbb9f",
+                    "OKF_UPSTREAM_REF": "ad30107",
                 },
             )
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -188,7 +188,7 @@ class IssueLifecycle(unittest.TestCase):
         self.assertNotIn("issue edit", log)
         self.assertNotIn("issue close", log)
         self.assertIn("| Bundle | Concept | Type | Status | Trust | Stale since |", body)
-        self.assertIn("`3fcbb9f`", body)
+        self.assertIn("`ad30107`", body)
 
     def test_stale_with_an_open_issue_edits_instead_of_duplicating(self):
         log, _, out = self.run_step(count=7, existing="42")

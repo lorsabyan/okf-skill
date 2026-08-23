@@ -43,7 +43,7 @@ class PinnedRef(unittest.TestCase):
 
     def test_ci_derives_the_ref_rather_than_hardcoding_it(self):
         ci = CI_YML.read_text(encoding="utf-8")
-        hardcoded = re.findall(r"KNOWLEDGE_CATALOG_REF:\s*([0-9a-f]{7,40})", ci)
+        hardcoded = re.findall(r"OKF_UPSTREAM_REF:\s*([0-9a-f]{7,40})", ci)
         self.assertEqual(hardcoded, [], "ci.yml must read the ref from SPEC.md, not pin its own copy")
         self.assertIn("okf/references/SPEC.md", ci, "ci.yml must derive the ref from the vendored spec")
 

@@ -11,6 +11,37 @@ always the one pinned in `okf/references/SPEC.md`'s attribution header.
 
 ## [Unreleased]
 
+### Changed
+
+- **Followed OKF to its own repository.** Upstream moved the format out of
+  `GoogleCloudPlatform/knowledge-catalog`, whose `okf/` directory is now a frozen,
+  unmaintained snapshot, and said so in its README. The vendored spec, both
+  workflows, and every citation now pin
+  [`ad30107`](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/ad30107/SPEC.md) in
+  `GoogleCloudPlatform/open-knowledge-format`. CI's env var is `OKF_UPSTREAM_REF`, was
+  `KNOWLEDGE_CATALOG_REF`.
+
+### Fixed
+
+- **`stale_after` and `sources[].last_modified` accept an ISO 8601 timestamp.**
+  §5 now asks for a datetime with an explicit offset — tightened upstream without
+  an `okf_version` bump, so nothing signalled the change. The bare-`YYYY-MM-DD`
+  check warned on the exact form upstream now writes: 16 spurious warnings across
+  the reference bundles, which the `--strict` gate turned into a red build. A bare
+  date stays accepted, because bundles written against the earlier v0.2 text
+  declare the same version and are not retroactively non-conformant.
+
+### Added
+
+- `usage_window.from` and `.to` are checked as timestamps. Only the presence of
+  the two keys was validated before; their values were never looked at.
+- `SKILL.md` states the timestamp convention and its one exception. The two
+  authoring examples were still teaching bare dates, so agents following the
+  skill kept emitting the form upstream moved away from — the validator accepted
+  it, which is exactly why nothing caught it. `log.md` date headings (§9) stay
+  `YYYY-MM-DD`; the spec is explicit about that and the validator's
+  `DATE_HEADING_RE` is unchanged.
+
 ## [0.2.0] — 2026-07-30
 
 Targets **OKF v0.2**, pinned to upstream
