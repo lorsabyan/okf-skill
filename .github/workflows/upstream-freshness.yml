@@ -47,6 +47,9 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Install YAML 1.2 reader
+        run: python -m pip install -r okf/scripts/requirements.txt
+
       - name: Resolve pinned upstream commit
         run: |
           # SPEC.md's attribution header is the only place the commit is written.
@@ -61,7 +64,7 @@ jobs:
       - name: Fetch upstream reference bundles
         run: |
           git clone --quiet --filter=blob:none --no-checkout \
-            https://github.com/GoogleCloudPlatform/open-knowledge-format.git upstream
+            https://github.com/open-knowledge-format/open-knowledge-format.git upstream
           git -C upstream checkout --quiet "$OKF_UPSTREAM_REF"
 
       - name: Collect staleness
@@ -121,7 +124,7 @@ jobs:
           fi
 
           {
-            echo "As of \`$AS_OF\`, **$COUNT** concept(s) in the pinned upstream reference bundles are past their \`stale_after\` (OKF v0.2 §5.5)."
+            echo "As of \`$AS_OF\`, **$COUNT** concept(s) in the pinned upstream reference bundles are past their \`stale_after\` (OKF v0.3 §5.5)."
             echo
             echo "Pinned upstream commit: \`$OKF_UPSTREAM_REF\`"
             echo
@@ -187,7 +190,7 @@ jobs:
           # blob:none keeps this cheap: --name-only and rev-list need trees and
           # commits, not file contents.
           git clone --quiet --filter=blob:none --no-checkout \
-            https://github.com/GoogleCloudPlatform/open-knowledge-format.git upstream
+            https://github.com/open-knowledge-format/open-knowledge-format.git upstream
 
           head=$(git -C upstream rev-parse HEAD)
           echo "Upstream default branch: $head"
@@ -280,7 +283,7 @@ jobs:
             echo "- Re-run the validator against the new reference bundles before bumping —"
             echo "  a format change with no version bump shows up there first."
             echo
-            echo "[Compare on GitHub](https://github.com/GoogleCloudPlatform/open-knowledge-format/compare/$OKF_UPSTREAM_REF...$HEAD_SHA)"
+            echo "[Compare on GitHub](https://github.com/open-knowledge-format/open-knowledge-format/compare/$OKF_UPSTREAM_REF...$HEAD_SHA)"
             echo
             echo "<sub>Maintained automatically by \`.github/workflows/upstream-freshness.yml\`. The body is refreshed on each run.</sub>"
           } > issue.md

@@ -80,7 +80,7 @@ class WorkflowShape(unittest.TestCase):
         self.assertIn('rev-list --count "$OKF_UPSTREAM_REF..$head"', WORKFLOW)
 
     def test_drift_job_targets_the_official_repository(self):
-        self.assertIn("GoogleCloudPlatform/open-knowledge-format.git", WORKFLOW)
+        self.assertIn("open-knowledge-format/open-knowledge-format.git", WORKFLOW)
         self.assertNotIn("knowledge-catalog.git", WORKFLOW)
 
     def test_drift_job_singles_out_a_spec_change(self):

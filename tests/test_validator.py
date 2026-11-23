@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from helpers import SCRIPTS, bundle  # must precede the script imports: adds okf/scripts to sys.path
@@ -97,9 +97,9 @@ class FalsePositives(BundleCase):
 
 
 class Conformance(BundleCase):
-    def test_missing_type_is_an_error(self):
+    def test_v02_missing_type_is_an_error(self):
         self.assertErrorMatches("'type'", {
-            "index.md": "# Root\n\n* [A](a.md) - x\n",
+            "index.md": "---\nokf_version: '0.2'\n---\n# Root\n\n* [A](a.md) - x\n",
             "a.md": "---\ntitle: No type\n---\n\nBody.\n",
         })
 
@@ -189,7 +189,7 @@ class AttestedComputation(BundleCase):
         self.assertWarningMatches("no 'computation' path", self.files("runtime: bigquery\n"))
 
     def test_inline_computation_section_satisfies_it(self):
-        self.assertClean(self.files("runtime: bigquery\n", body="# Computation\n\n    SELECT 1\n"))
+        self.assertClean(self.files("runtime: bigquery\n", body="## Computation\n\n```sql\nSELECT 1\n```\n"))
 
     def test_parameter_without_name_warns(self):
         self.assertWarningMatches("'parameters[0]'", self.files(
@@ -254,11 +254,20 @@ class TrustAndLifecycle(BundleCase):
             "a.md": "---\ntype: Metric\ndescription: first\nstale_after: 2026-12-31T00:00:00Z\n---\n\nBody.\n",
         }, today=date(2026, 7, 30))
 
-    def test_stale_after_as_a_datetime_still_compares_by_day(self):
-        self.assertWarningMatches("stale since 2026-06-30", {
+    def test_offset_deadline_in_validation_and_report(self):
+        files = {
             "index.md": "# Root\n\n* [A](a.md) - first\n",
-            "a.md": "---\ntype: Metric\ndescription: first\nstale_after: 2026-06-30T14:00:00Z\n---\n\nBody.\n",
-        }, today=date(2026, 7, 30))
+            "a.md": "---\ntype: Metric\ndescription: first\nstale_after: 2026-07-31T01:00:00+04:00\n---\n",
+        }
+        for clock, stale in [(date(2026, 7, 30), False),
+                             (date(2026, 7, 31), True),
+                             (datetime.fromisoformat("2026-07-30T20:59:59+00:00"), False),
+                             (datetime.fromisoformat("2026-07-30T21:00:00+00:00"), True)]:
+            with self.subTest(clock=clock):
+                errors, warnings = self.check(files, today=clock)
+                self.assertEqual(errors, [])
+                self.assertEqual(any("stale since" in w for w in warnings), stale)
+                self.assertEqual(bool(collect_report(self.root, clock)[0]["stale"]), stale)
 
     def test_stale_after_that_is_neither_date_nor_datetime_warns(self):
         self.assertWarningMatches("'stale_after' should be an absolute ISO 8601 timestamp", {
@@ -329,12 +338,12 @@ class CommandLine(BundleCase):
         })
         result = self.run_cli()
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn("conformant with OKF v0.2", result.stdout)
+        self.assertIn("conformant with OKF v0.3", result.stdout)
 
     def test_error_exits_one(self):
         bundle(self.root, {
             "index.md": "# Root\n\n* [A](a.md) - first\n",
-            "a.md": "---\ntitle: no type\n---\n\nBody.\n",
+            "a.md": "---\ntype: [\n---\n\nBody.\n",
         })
         self.assertEqual(self.run_cli().returncode, 1)
 
@@ -356,7 +365,7 @@ class CommandLine(BundleCase):
     def test_report_mode_prints_tiers_and_does_not_gate(self):
         bundle(self.root, {
             "index.md": "# Root\n\n* [A](a.md) - first\n",
-            "a.md": "---\ntitle: no type\n---\n\nBody.\n",  # would be an error in check mode
+            "a.md": "---\ntype: Metric\n---\n\nBody.\n",  # no verification events
         })
         result = self.run_cli("--report")
         self.assertEqual(result.returncode, 0, result.stdout)

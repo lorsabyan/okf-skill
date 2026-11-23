@@ -4,51 +4,41 @@ All notable changes to this skill are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-**The version tracks the skill, not the format.** They happen to line up at
-`0.2.x` today because this release is what added OKF v0.2 support, but a future
-`0.3.0` would not imply an OKF v0.3 — the OKF version this skill targets is
-always the one pinned in `okf/references/SPEC.md`'s attribution header.
+Skill releases follow their own version sequence. The attribution header in
+`okf/references/SPEC.md` identifies the supported OKF specification.
 
 ## [Unreleased]
 
 ### Changed
 
-- **Followed OKF to its own repository.** Upstream moved the format out of
-  `GoogleCloudPlatform/knowledge-catalog`, whose `okf/` directory is now a frozen,
-  unmaintained snapshot, and said so in its README. The vendored spec, both
-  workflows, and every citation now pin
-  [`ad30107`](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/ad30107/SPEC.md) in
-  `GoogleCloudPlatform/open-knowledge-format`. CI's env var is `OKF_UPSTREAM_REF`, was
-  `KNOWLEDGE_CATALOG_REF`.
+- The skill now targets OKF v0.3. The specification, CI, and upstream change
+  monitor follow the new official repository. [Pinned specification](https://github.com/open-knowledge-format/open-knowledge-format/blob/527e81a/SPEC.md)
+- The validator and index generator use a YAML 1.2 reader. Install it with
+  `python3 -m pip install -r okf/scripts/requirements.txt`.
+- In v0.3 bundles, ordinary Markdown files can coexist with typed concepts.
+  Reports and index discovery skip untyped files. Regeneration preserves root
+  metadata, extension keys, and curated entries.
+- Trust tiers use verification events with an actor and timestamp that apply
+  to the current content. Path fields resolve from their containing file.
+  Earlier and unversioned bundles retain the bundle-root fallback.
 
 ### Fixed
 
-- **`stale_after` and `sources[].last_modified` accept an ISO 8601 timestamp.**
-  §5 now asks for a datetime with an explicit offset — tightened upstream without
-  an `okf_version` bump, so nothing signalled the change. The bare-`YYYY-MM-DD`
-  check warned on the exact form upstream now writes: 16 spurious warnings across
-  the reference bundles, which the `--strict` gate turned into a red build. A bare
-  date stays accepted, because bundles written against the earlier v0.2 text
-  declare the same version and are not retroactively non-conformant.
+- Freshness checks respect the time and UTC offset in `stale_after`.
+  A bare date means midnight UTC. Reports flag malformed deadlines.
+- Removing the last concept in a directory now makes `--check` detect its
+  obsolete index entry, and regeneration removes the link.
+- Documentation example tests use a fixed date so their results are reproducible.
 
 ### Added
 
-- **A `spec-drift` job that watches the official repository's default branch.**
-  Nothing here did. `ci.yml` diffs the vendored spec against the *pinned*
-  commit and the freshness job evaluates bundles *at* the pinned commit, so
-  both are blind by construction to upstream moving ahead — which is why the
-  §5 change sat unnoticed from 2026-08-20 until it was found by hand. The job
-  maintains one issue labelled `upstream-spec-drift`, singles out a changed
-  `SPEC.md` from ordinary upstream churn, and states that `okf_version` is not
-  a reliable signal of a format change. It never fails a build.
-- `usage_window.from` and `.to` are checked as timestamps. Only the presence of
-  the two keys was validated before; their values were never looked at.
-- `SKILL.md` states the timestamp convention and its one exception. The two
-  authoring examples were still teaching bare dates, so agents following the
-  skill kept emitting the form upstream moved away from — the validator accepted
-  it, which is exactly why nothing caught it. `log.md` date headings (§9) stay
-  `YYYY-MM-DD`; the spec is explicit about that and the validator's
-  `DATE_HEADING_RE` is unchanged.
+- Authoring and consumption guidance for `superseded_by`, bundle metadata,
+  extension keys, and fenced attested computations.
+- CI validates the four official reference bundles at both the v0.3 and legacy
+  v0.2 revisions. The scheduled workflow tracks changes in the official
+  repository and reports stale concepts in the pinned bundles.
+- Timestamp checks cover `sources[].last_modified` and both ends of
+  `usage_window`.
 
 ## [0.2.0] — 2026-07-30
 

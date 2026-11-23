@@ -13,7 +13,7 @@ Curated order and hand-abridged titles therefore survive regeneration, which
 matters because the reference bundles curate both. `--rebuild` discards all of
 that and applies the mechanical convention instead.
 
-Stdlib-only; shares its frontmatter parser with validate_okf.py.
+Shares its frontmatter parser with validate_okf.py.
 
 Usage:
     python3 generate_index.py <bundle-dir> [--check] [--rebuild]
@@ -25,16 +25,17 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import posixpath
 import re
 import sys
 from pathlib import Path
+from urllib.parse import quote, unquote
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from validate_okf import INDEX_PARSE_RE, RESERVED, parse_frontmatter  # noqa: E402
+from validate_okf import INDEX_PARSE_RE, RESERVED, URI_SCHEME_RE, _visible, bundle_version, concept_type, list_md_files, parse_frontmatter  # noqa: E402
 
 SUBDIR_HEADING = "Subdirectories"
-UNTYPED_HEADING = "Other"
 HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 
 
@@ -45,39 +46,18 @@ def _decode(path: Path) -> str | None:
         return None
 
 
-def _visible(root: Path, path: Path) -> bool:
-    return not any(part.startswith(".") for part in path.relative_to(root).parts)
-
-
-def _concept_docs(root: Path) -> list[Path]:
-    return [md for md in root.rglob("*.md") if md.name not in RESERVED and _visible(root, md)]
-
-
-def _read_concept(path: Path) -> tuple[str, str, str] | None:
+def _read_concept(path: Path, legacy: bool) -> tuple[str, str, str] | None:
     """Return (type, title, description), or None when frontmatter is unreadable."""
     text = _decode(path)
     if text is None:
         return None
-    frontmatter, _ = parse_frontmatter(text)
-    if frontmatter is None:
+    frontmatter, _ = parse_frontmatter(text, legacy)
+    kind = concept_type(frontmatter)
+    if not kind:
         return None
-    concept_type = str(frontmatter.get("type") or "").strip() or UNTYPED_HEADING
     title = str(frontmatter.get("title") or "").strip() or path.stem
     description = str(frontmatter.get("description") or "").strip()
-    return concept_type, title, description
-
-
-def _indexable_dirs(root: Path) -> list[Path]:
-    """Every directory holding a concept doc, plus the ancestors leading to it."""
-    dirs: set[Path] = set()
-    for md in _concept_docs(root):
-        current = md.parent
-        while True:
-            dirs.add(current)
-            if current == root:
-                break
-            current = current.parent
-    return sorted(dirs)
+    return kind, title, description
 
 
 def split_frontmatter_prefix(text: str) -> tuple[str, str]:
@@ -86,10 +66,10 @@ def split_frontmatter_prefix(text: str) -> tuple[str, str]:
     if not text.startswith("---"):
         return "", text
     lines = text.splitlines()
-    if lines[0].strip() != "---":
+    if lines[0] != "---":
         return "", text
     for i, line in enumerate(lines[1:], 1):
-        if line.strip() in ("---", "..."):
+        if line in ("---", "..."):
             body = "\n".join(lines[i + 1:]).lstrip("\n")
             return "\n".join(lines[: i + 1]) + "\n\n", body
     return "", text
@@ -124,49 +104,61 @@ def _render(sections: list[tuple[str, list[tuple[str, str, str]]]]) -> str:
     return "\n\n".join(blocks) + "\n" if blocks else ""
 
 
-def _discover(directory: Path, root: Path, dir_descriptions: dict[Path, str]):
+def _discover(directory, root, dir_descriptions, concepts, directories):
     """What the directory actually contains now: {link: (heading, title, desc)}."""
     found: dict[str, tuple[str, str, str]] = {}
     for child in sorted(directory.iterdir()):
         if not _visible(root, child):
             continue
-        if child.is_file() and child.suffix == ".md" and child.name not in RESERVED:
-            parsed = _read_concept(child)
-            if parsed is None:
-                continue
-            concept_type, title, description = parsed
-            found[child.name] = (concept_type, title, description)
-        elif child.is_dir() and (_concept_docs(child) or (child / "index.md").exists()):
+        if child in concepts:
+            found[quote(child.name)] = concepts[child]
+        elif child in directories:
             # Listed because it has, or will get, an index of its own — including
             # a directory of code such as `attesters/`, which carries an index but
             # no concept docs. Upstream synthesizes a blurb with an LLM; offline,
             # borrow the lone child's description when there is exactly one.
-            found[f"{child.name}/index.md"] = (
+            found[f"{quote(child.name)}/index.md"] = (
                 SUBDIR_HEADING, child.name, dir_descriptions.get(child, "")
             )
     return found
 
 
-def _resolves(directory: Path, link: str) -> bool:
+def _resolves(root: Path, directory: Path, link: str) -> bool:
     """Whether an existing entry still points at something real. Broader than
     concept discovery on purpose: indexes legitimately list non-markdown assets
     (`sql_equality.py`), and regenerating must not drop them."""
     target = link.split("#")[0].split("?")[0]
-    if not target or target.startswith(("http://", "https://", "/")):
+    if not target or URI_SCHEME_RE.match(target) or target.startswith("//"):
         return True  # not ours to judge
-    return (directory / target).exists()
+    target = unquote(target)
+    path = root / target.lstrip("/") if target.startswith("/") else directory / target
+    return not _visible(root, path) or path.exists()
 
 
 def build_index(
     directory: Path,
     root: Path,
     dir_descriptions: dict[Path, str],
+    concepts: dict,
+    directories: set,
     rebuild: bool = False,
 ) -> str | None:
     """Render the index body for one directory, or None when nothing to list."""
-    found = _discover(directory, root, dir_descriptions)
+    found = _discover(directory, root, dir_descriptions, concepts, directories)
     if not found:
-        return None
+        # With no discoverable concepts, an index may still document assets.
+        # Remove dead entries while preserving its other content verbatim.
+        text = _decode(directory / "index.md")
+        if text is None:
+            return None
+        _, body = split_frontmatter_prefix(text) if directory == root else ("", text)
+        kept = []
+        for line in body.splitlines(keepends=True):
+            entry = INDEX_PARSE_RE.match(line)
+            if entry is None or _resolves(root, directory, entry.group(2)):
+                kept.append(line)
+        updated = "".join(kept)
+        return updated if updated != body else None
 
     existing_text = _decode(directory / "index.md") if not rebuild else None
     _, existing_body = split_frontmatter_prefix(existing_text) if existing_text else ("", "")
@@ -186,18 +178,24 @@ def build_index(
     # Update in place: keep surviving entries as written, drop dead ones.
     sections: list[tuple[str, list[tuple[str, str, str]]]] = []
     seen: set[str] = set()
+    listed_targets: set[str] = set()
     for heading, entries in existing:
         kept = []
         for title, link, description in entries:
-            if link not in seen and (link in found or _resolves(directory, link)):
+            if link not in seen and (link in found or _resolves(root, directory, link)):
                 kept.append((title, link, description))
                 seen.add(link)
+                target = unquote(link.partition("#")[0].partition("?")[0])
+                if not URI_SCHEME_RE.match(target) and not target.startswith("//"):
+                    base = "/" + directory.relative_to(root).as_posix()
+                    listed_targets.add(posixpath.normpath(posixpath.join(base, target)))
         sections.append((heading, kept))
 
     # Append what is new, into its own heading when one already exists.
     by_heading = {heading: entries for heading, entries in sections}
     for link, (heading, title, description) in found.items():
-        if link in seen:
+        target = directory.relative_to(root) / unquote(link)
+        if link in seen or "/" + target.as_posix() in listed_targets:
             continue
         if heading in by_heading:
             by_heading[heading].append((title, link, description))
@@ -219,22 +217,32 @@ def generate(root: Path, check: bool, rebuild: bool = False) -> tuple[list[Path]
     unchanged: list[Path] = []
     dir_descriptions: dict[Path, str] = {}
 
-    # Deepest first, so a child's description is known before its parent lists it.
-    for directory in sorted(
-        _indexable_dirs(root), key=lambda p: (-len(p.relative_to(root).parts), str(p))
-    ):
-        body = build_index(directory, root, dir_descriptions, rebuild)
+    directories = set()
+    concepts = {}
+    legacy = bundle_version(root) in ("0.1", "0.2")
+    for path in list_md_files(root):
+        if path.name == "log.md":
+            continue
+        if path.name != "index.md":
+            entry = _read_concept(path, legacy)
+            if entry is None:
+                continue
+            concepts[path] = entry
+        directory = path.parent
+        while directory not in directories:
+            directories.add(directory)
+            if directory == root:
+                break
+            directory = directory.parent
+
+    directories = {d for d in directories if _visible(root, d / "index.md")}
+    for directory in sorted(directories, key=lambda p: (-len(p.parts), str(p))):
+        body = build_index(directory, root, dir_descriptions, concepts, directories, rebuild)
         if body is None:
             continue
-
-        concepts = [
-            c for c in sorted(directory.iterdir())
-            if c.is_file() and c.suffix == ".md" and c.name not in RESERVED and _visible(root, c)
-        ]
-        if len(concepts) == 1:
-            parsed = _read_concept(concepts[0])
-            if parsed and parsed[2]:
-                dir_descriptions[directory] = parsed[2]
+        children = [concepts[p] for p in directory.iterdir() if p in concepts]
+        if len(children) == 1:
+            dir_descriptions[directory] = children[0][2]
 
         index_path = directory / "index.md"
         existing_text = _decode(index_path) or ""

@@ -25,8 +25,11 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python: ["3.9", "3.11", "3.13"]
+        python: ["3.11", "3.13"]
         include:
+          # setup-python provides Python 3.9 builds for Ubuntu 22.04.
+          - os: ubuntu-22.04
+            python: "3.9"
           # The validator resolves links case-exactly rather than deferring to the
           # filesystem; run once on macOS so a case-insensitive volume cannot
           # silently diverge from Linux.
@@ -39,6 +42,9 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
+
+      - name: Install YAML 1.2 reader
+        run: python -m pip install -r okf/scripts/requirements.txt
 
       - name: Tests (offline)
         working-directory: tests
@@ -60,7 +66,7 @@ jobs:
       - name: Fetch upstream reference bundles
         run: |
           git clone --quiet --filter=blob:none --no-checkout \
-            https://github.com/GoogleCloudPlatform/open-knowledge-format.git upstream
+            https://github.com/open-knowledge-format/open-knowledge-format.git upstream
           git -C upstream checkout --quiet "$OKF_UPSTREAM_REF"
           echo "OKF_REFERENCE_BUNDLES=$PWD/upstream/bundles" >> "$GITHUB_ENV"
 
@@ -69,6 +75,12 @@ jobs:
         env:
           OKF_AS_OF: ${{ env.REFERENCE_AS_OF }}
         run: python -m unittest discover -s . -t . -v
+
+      - name: Check legacy v0.2 reference bundles
+        working-directory: tests
+        run: |
+          git -C ../upstream worktree add --detach "$RUNNER_TEMP/okf-v02" ad30107
+          OKF_REFERENCE_BUNDLES="$RUNNER_TEMP/okf-v02/bundles" python -m unittest test_reference_bundles
 
       - name: Benchmark (this repo's validator must stay at 19/19 and 10/10)
         run: |

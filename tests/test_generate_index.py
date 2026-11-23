@@ -80,10 +80,10 @@ class FreshIndex(GeneratorCase):
         self.run_generate()
         self.assertIn("* [Orders](orders.md)\n", self.index())
 
-    def test_untyped_concept_grouped_under_other(self):
+    def test_untyped_markdown_does_not_get_an_index(self):
         self.build({"x.md": "---\ntitle: No type\ndescription: d\n---\n\nB.\n"})
         self.run_generate()
-        self.assertIn("# Other", self.index())
+        self.assertFalse((self.root / "index.md").exists())
 
 
 class PreservesCuration(GeneratorCase):
@@ -147,6 +147,25 @@ class PreservesCuration(GeneratorCase):
 
 
 class PreservesOtherContent(GeneratorCase):
+    def test_last_concept_removed_at_root_and_in_subdirectory(self):
+        prefix = '---\nokf_version: "0.2"\n---\n\n'
+        for directory in (self.root, self.root / "nested"):
+            with self.subTest(directory=directory):
+                directory.mkdir(exist_ok=True)
+                doc = directory / "last.md"
+                doc.write_text("---\ntype: Metric\n---\n")
+                index = directory / "index.md"
+                if directory == self.root:
+                    index.write_text(prefix)
+                self.run_generate()
+                doc.unlink()
+                self.assertEqual(self.run_cli("--check").returncode, 1)
+                self.assertIn("last.md", index.read_text())
+                self.run_generate()
+                self.assertNotIn("last.md", index.read_text())
+                self.assertTrue(self.index().startswith(prefix))
+                self.assertEqual(self.run_cli("--check").returncode, 0)
+
     def test_non_markdown_entry_is_kept(self):
         """acme_retail/attesters/index.md lists a .py file; regenerating must
         not drop it just because it is not a concept doc."""

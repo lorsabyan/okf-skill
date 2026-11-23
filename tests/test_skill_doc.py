@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 from helpers import REPO_ROOT, SKILL_MD, pinned_ref, write  # noqa: F401  also adds okf/scripts to sys.path
@@ -81,12 +82,12 @@ class TaughtExamplesAreValid(unittest.TestCase):
                   "* [attesters](attesters/index.md) - Attesters.\n")
             entries = "\n".join(f"* [{n}]({n}) - Example concept." for n in names)
             write(root / "index.md",
-                  '---\nokf_version: "0.2"\n---\n\n# Example\n\n' + entries
+                  '---\nokf_version: "0.3"\n---\n\n# Example\n\n' + entries
                   + "\n* [order_lines.md](order_lines.md) - Support doc."
                   "\n* [customers.md](customers.md) - Support doc.\n"
                   "\n# Subdirectories\n\n* [references](references/index.md) - Supporting material.\n")
 
-            errors, warnings = check_bundle(root)
+            errors, warnings = check_bundle(root, today=date(2026, 7, 30))
             self.assertEqual(errors, [], f"SKILL.md examples produce errors: {errors}")
             self.assertEqual(warnings, [], f"SKILL.md examples produce warnings: {warnings}")
 
@@ -101,7 +102,7 @@ class GuidanceRegressions(unittest.TestCase):
         self.assertEqual(offenders, [], f"absolute links in SKILL.md examples: {offenders}")
 
     def test_teaches_relative_links_explicitly(self):
-        self.assertIn("Never start a link with `/`", SKILL)
+        self.assertIn("file-relative links", SKILL)
 
     def test_teaches_the_de_facto_query_section(self):
         self.assertIn("# Common query patterns", SKILL)
@@ -126,7 +127,7 @@ class GuidanceRegressions(unittest.TestCase):
         # Which commit is asserted in test_pinned_refs.py; here we only care that
         # the vendored spec cites one, and is the version this skill teaches.
         self.assertIn(f"blob/{pinned_ref()}", spec.read_text(encoding="utf-8")[:600])
-        self.assertIn("**Version 0.2**", spec.read_text(encoding="utf-8"))
+        self.assertIn("**Version 0.3**", spec.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
