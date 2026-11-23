@@ -9,6 +9,8 @@ Skill releases follow their own version sequence. The attribution header in
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-11-23
+
 ### Changed
 
 - The skill now targets OKF v0.3. The specification, CI, and upstream change
@@ -122,6 +124,7 @@ Initial release. Agent Skill for Claude Code and Codex teaching OKF v0.1:
 bundle structure, concept documents, cross-linking, index and log files, and a
 stdlib-only conformance validator.
 
-[Unreleased]: https://github.com/lorsabyan/okf-skill/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/lorsabyan/okf-skill/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/lorsabyan/okf-skill/releases/tag/v0.3.0
 [0.2.0]: https://github.com/lorsabyan/okf-skill/releases/tag/v0.2.0
 [0.1.0]: https://github.com/lorsabyan/okf-skill/releases/tag/v0.1.0
