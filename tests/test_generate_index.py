@@ -227,10 +227,8 @@ class Helpers(unittest.TestCase):
 
     def test_split_frontmatter_prefix(self):
         prefix, body = split_frontmatter_prefix('---\nokf_version: "0.2"\n---\n\n# A\n')
-        # The prefix is what gets written back verbatim; the body is only parsed,
-        # so its trailing newline is not preserved.
         self.assertEqual(prefix, '---\nokf_version: "0.2"\n---\n\n')
-        self.assertEqual(body, "# A")
+        self.assertEqual(body, "# A\n")
 
     def test_split_frontmatter_prefix_without_block(self):
         prefix, body = split_frontmatter_prefix("# A\n")

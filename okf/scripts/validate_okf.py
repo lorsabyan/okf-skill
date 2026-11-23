@@ -23,26 +23,19 @@ from pathlib import Path
 from urllib.parse import unquote
 
 try:
+    from okf_markdown import computation_section, footnote_labels, headings, index_sections, link_targets, markdown_lines
     from ruamel.yaml import YAML, YAMLError
     from ruamel.yaml.constructor import SafeConstructor
 except ModuleNotFoundError as exc:
-    raise SystemExit(f"Install the YAML reader with: {sys.executable} -m pip install -r "
+    raise SystemExit(f"Install the script dependencies with: {sys.executable} -m pip install -r "
                      f"{Path(__file__).with_name('requirements.txt')}") from exc
 
 RESERVED = {"index.md", "log.md"}
 KNOWN_VERSIONS = {"0.1", "0.2", "0.3"}
 STATUS_VALUES = {"draft", "stable", "deprecated"}
 
-LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 # Fences may be indented (e.g. inside a numbered list); the closing fence need
 # not share the opening indent. An unclosed fence matches nothing, by design.
-FENCED_BLOCK_RE = re.compile(r"^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1`*[ \t]*$", re.M | re.S)
-INDEX_ENTRY_RE = re.compile(r"^\s*[*+-]\s+\[", re.M)
-# "* [Title](target) - description", the §8 index entry shape.
-INDEX_PARSE_RE = re.compile(r"^\s*[*+-]\s+\[([^\]]*)\]\(([^)\s]+)\)\s*[-–—:]?\s*(.*)$", re.M)
-FOOTNOTE_USE_RE = re.compile(r"(?<!\])\[\^([^\]\s]+)\](?!:)")
-FOOTNOTE_DEF_RE = re.compile(r"^\s*\[\^([^\]\s]+)\]:", re.M)
-CITATIONS_HEADING_RE = re.compile(r"^#{1,6}\s+Citations\s*$", re.M)
 URI_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*:", re.I)
 
 
@@ -110,7 +103,7 @@ CoreConstructor.add_constructor("tag:yaml.org,2002:timestamp", SafeConstructor.c
 
 
 def parse_frontmatter(text: str, legacy: bool = False) -> tuple[dict | None, str]:
-    lines = text.splitlines()
+    lines = [line.rstrip("\r\n") for line in markdown_lines(text)]
     if not lines or lines[0] != "---":
         return None, text
     delimiters = ("---", "...") if legacy else ("---",)
@@ -138,7 +131,7 @@ def bundle_version(root: Path, *, require_valid_metadata: bool = False) -> str:
         if require_valid_metadata:
             if not clean:
                 raise ValueError(f"{index}: invalid UTF-8")
-            if text.splitlines()[:1] == ["---"]:
+            if text.startswith(("---\r", "---\n")) or text == "---":
                 if version not in ("0.1", "0.2"):
                     fm, _ = parse_frontmatter(text)
                 if fm is None:
@@ -274,7 +267,7 @@ def _validate(bundle: Bundle, today: date | None) -> tuple[list[str], list[str],
         rel = path.relative_to(root).as_posix()
         is_root_index = path.name == "index.md" and path.parent == root
 
-        has_block = text.splitlines()[:1] == ["---"]
+        has_block = text.startswith(("---\r", "---\n")) or text == "---"
         if fm is None and has_block:
             errors.append(f"{rel}: unparseable YAML frontmatter block")
             continue
@@ -291,9 +284,7 @@ def _validate(bundle: Bundle, today: date | None) -> tuple[list[str], list[str],
             count += 1
             _check_concept(bundle, path, rel, fm, body, warnings, today)
 
-        # Fenced code often quotes example markdown; don't link-check it.
-        prose = FENCED_BLOCK_RE.sub("", body)
-        for target in LINK_RE.findall(prose):
+        for target in link_targets(body):
             if URI_SCHEME_RE.match(target) or target.startswith(("#", "//")):
                 continue
             target_path = target.partition("#")[0].partition("?")[0]
@@ -304,7 +295,7 @@ def _validate(bundle: Bundle, today: date | None) -> tuple[list[str], list[str],
                 warnings.append(f"{rel}: link to missing concept '{target}'")
 
         if fm is not None and path.name not in RESERVED:
-            _check_footnotes(rel, fm, prose, warnings)
+            _check_footnotes(rel, fm, body, warnings)
 
     for directory in sorted({p.parent for p, (fm, _, _) in parsed.items()
                              if p.name not in RESERVED and concept_type(fm)}):
@@ -328,31 +319,36 @@ def _check_reserved(bundle, path, rel, fm, body, text, is_root_index, errors, wa
                 warnings.append(f"{rel}: declares okf_version '{declared}'; this validator knows {', '.join(sorted(KNOWN_VERSIONS))}")
         haystack = body if fm is not None else text
         structural = warnings if bundle.legacy else errors
-        if not re.search(r"^#{1,6}\s+\S", haystack, re.M):
+        sections = index_sections(haystack)
+        entries = [entry for section in sections for entry in section.entries]
+        if not sections:
             structural.append(f"{rel}: index.md has no section heading")
-        if path.parent in bundle.listing_dirs and not INDEX_ENTRY_RE.search(haystack):
+        if path.parent in bundle.listing_dirs and not entries:
             structural.append(f"{rel}: index.md has no '* [Title](url) - description' entries")
         else:
-            _check_index_entries(bundle, path, rel, haystack, warnings)
+            _check_index_entries(bundle, path, rel, entries, warnings)
     elif path.name == "log.md":
-        dates = [ln[3:].strip() for ln in body.splitlines() if ln.startswith("## ")]
+        dates = [title for tag, title in headings(body) if tag == "h2"]
         structural = warnings if bundle.legacy else errors
         if not dates or any(not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) or not is_iso_date(d) for d in dates):
             structural.append(f"{rel}: log.md requires valid '## YYYY-MM-DD' date headings")
 
 
-def _check_index_entries(bundle, path, rel, haystack, warnings) -> None:
+def _check_index_entries(bundle, path, rel, entries, warnings) -> None:
     """§8: entries SHOULD carry a description drawn from the linked concept.
 
     Only a *missing* description is flagged. Abridging it is idiomatic — the
     upstream reference bundles all shorten long frontmatter descriptions for
     the index — so comparing the two texts for equality reports style, not
     defects."""
-    for _title, target, entry_desc in INDEX_PARSE_RE.findall(haystack):
-        if entry_desc.strip() or URI_SCHEME_RE.match(target) or not target.endswith(".md"):
+    for entry in entries:
+        target = entry.target
+        if entry.description.strip() or URI_SCHEME_RE.match(target) or target.startswith("//"):
             continue
-        resolved = bundle.resolve(path, target.split("#")[0])
-        if bundle.descriptions.get(resolved or ""):
+        resolved = bundle.resolve(path, target)
+        if not resolved or not resolved.endswith(".md"):
+            continue
+        if bundle.descriptions.get(resolved):
             warnings.append(f"{rel}: entry for '{target}' has no description, though the concept defines one (§8)")
 
 
@@ -363,7 +359,7 @@ def _check_concept(bundle, path, rel, fm, body, warnings, today) -> None:
     # v0.1 -> v0.2 migration nudges (never errors; v0.1 docs stay consumable).
     if fm.get("timestamp") and not fm.get("generated"):
         warnings.append(f"{rel}: legacy v0.1 'timestamp'; v0.2 records this as 'generated: {{ by, at }}' (§5.2)")
-    if CITATIONS_HEADING_RE.search(body):
+    if "Citations" in body and any(title == "Citations" for _, title in headings(body)):
         warnings.append(f"{rel}: legacy v0.1 '# Citations' body list; v0.2 records provenance in 'sources' (§5.1)")
 
     _check_trust(rel, fm, warnings)
@@ -400,9 +396,14 @@ def _check_trust(rel, fm, warnings) -> None:
         _check_datetime(rel, f"verified[{n}].at", event.get("at"), warnings)
 
 
+def _status(fm: dict) -> str:
+    value = fm.get("status")
+    return "stable" if value in (None, "", []) else str(value)
+
+
 def _check_lifecycle(rel, fm, warnings, today) -> None:
-    status = fm.get("status")
-    if status and str(status).strip().lower() not in STATUS_VALUES:
+    status = _status(fm)
+    if status not in STATUS_VALUES:
         warnings.append(f"{rel}: 'status' is {status!r}; §5.4 defines {', '.join(sorted(STATUS_VALUES))}")
     stale_after = fm.get("stale_after")
     if stale_after not in (None, "", []) and not is_iso_datetime(stale_after):
@@ -476,40 +477,18 @@ def _check_computation(rel, fm, body, warnings, legacy) -> None:
             warnings.append(f"{rel}: 'parameters[{n}]' has no 'name' (§10.2)")
         elif not legacy and not param.get("type"):
             warnings.append(f"{rel}: 'parameters[{n}]' has no 'type' (§10.2)")
-    has_heading = re.search(r"^ {0,3}#{1,6}[ \t]+Computation(?:[ \t]+#+)?[ \t]*$", body, re.M)
-    if not fm.get("computation") and not has_heading:
-        warnings.append(f"{rel}: no 'computation' path and no '# Computation' body section (§10.3)")
-    elif not legacy and not fm.get("computation") and not _inline_computation(body):
-        warnings.append(f"{rel}: missing fenced computation in the Computation section (§10.3)")
+    if not fm.get("computation"):
+        has_heading, has_fence = computation_section(body)
+        if not has_heading:
+            warnings.append(f"{rel}: no 'computation' path and no '# Computation' body section (§10.3)")
+        elif not legacy and not has_fence:
+            warnings.append(f"{rel}: missing fenced computation in the Computation section (§10.3)")
     executor = fm.get("executor")
     if isinstance(executor, dict) and not executor.get("resource"):
         warnings.append(f"{rel}: 'executor' has no 'resource' naming how to run the computation (§10.2)")
 
 
-def _inline_computation(body: str) -> bool:
-    section = 0
-    fence = ""
-    for line in body.splitlines():
-        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
-        if fence:
-            if marker and marker[1].startswith(fence) and not marker[2].strip():
-                if section:
-                    return True
-                fence = ""
-        elif marker:
-            fence = marker[1]
-        else:
-            heading = re.match(r"^ {0,3}(#{1,6})[ \t]+(.+?)\s*$", line)
-            if heading:
-                level = len(heading[1])
-                if heading[2].rstrip("#").strip() == "Computation":
-                    section = level
-                elif level <= section:
-                    section = 0
-    return False
-
-
-def _check_footnotes(rel, fm, prose, warnings) -> None:
+def _check_footnotes(rel, fm, body, warnings) -> None:
     """§5.1: a footnote label attributing a claim joins to a sources[].id.
     Only a label with neither a definition nor a matching id is dangling."""
     ids = {
@@ -517,8 +496,10 @@ def _check_footnotes(rel, fm, prose, warnings) -> None:
         for entry in _as_list(fm.get("sources"))
         if isinstance(entry, dict) and entry.get("id")
     }
-    defined = set(FOOTNOTE_DEF_RE.findall(prose))
-    for label in dict.fromkeys(FOOTNOTE_USE_RE.findall(prose)):
+    if "[^" not in body:
+        return
+    uses, defined = footnote_labels(body)
+    for label in dict.fromkeys(uses):
         if label not in ids and label not in defined:
             warnings.append(f"{rel}: footnote '[^{label}]' matches no 'sources[].id' and has no definition (§5.1)")
 
@@ -539,7 +520,7 @@ def collect_report(root: Path, today: date | None = None) -> list[dict]:
         rows.append({
             "path": path.relative_to(root).as_posix(),
             "type": str(fm.get("type") or "-"),
-            "status": str(fm.get("status") or "stable"),
+            "status": _status(fm),
             "tier": trust_tier(fm),
             "stale": deadline,
             "invalid_deadline": fm.get("stale_after") not in (None, "", []) and not is_iso_datetime(fm["stale_after"]),

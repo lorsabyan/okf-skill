@@ -50,7 +50,7 @@ ln -sfn "$PWD/okf" ~/.codex/skills/okf
 
 ## Validator
 
-Install the YAML 1.2 reader in your Python environment:
+Install the YAML 1.2 and CommonMark readers in your Python environment:
 
 ```sh
 python3 -m pip install -r okf/scripts/requirements.txt

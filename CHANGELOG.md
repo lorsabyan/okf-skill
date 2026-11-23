@@ -9,6 +9,27 @@ Skill releases follow their own version sequence. The attribution header in
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-11-23
+
+### Fixed
+
+- Regenerating an index preserves curated prose, duplicate listings in different
+  sections, nested notes on surviving entries, and UTF-8 byte order marks.
+  Removing an obsolete entry also removes its continuation and nested notes.
+- Generation checks existing indexes before writing. It reports unreadable
+  indexes and refuses in-place updates that could overwrite a linked file.
+- Generated titles and multiline descriptions stay within their list entries.
+  New entries remain visible around HTML blocks and unterminated code fences.
+- Validation recognizes CommonMark links, including reference links, and
+  distinguishes computation sections, log dates, citations, and footnotes
+  from examples in code or comments. Invalid lifecycle statuses are reported.
+
+### Changed
+
+- Markdown parsing now uses `markdown-it-py`. Update the Python dependencies
+  with `python3 -m pip install -r okf/scripts/requirements.txt`. The scripts
+  continue to support OKF v0.3 and v0.2 bundles.
+
 ## [0.3.1] — 2026-11-23
 
 ### Fixed
@@ -136,7 +157,8 @@ Initial release. Agent Skill for Claude Code and Codex teaching OKF v0.1:
 bundle structure, concept documents, cross-linking, index and log files, and a
 stdlib-only conformance validator.
 
-[Unreleased]: https://github.com/lorsabyan/okf-skill/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/lorsabyan/okf-skill/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/lorsabyan/okf-skill/releases/tag/v0.3.2
 [0.3.1]: https://github.com/lorsabyan/okf-skill/releases/tag/v0.3.1
 [0.3.0]: https://github.com/lorsabyan/okf-skill/releases/tag/v0.3.0
 [0.2.0]: https://github.com/lorsabyan/okf-skill/releases/tag/v0.2.0

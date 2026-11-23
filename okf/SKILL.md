@@ -240,7 +240,7 @@ source in `sources`.
 
 ## Workflow: validating a bundle
 
-Install the YAML 1.2 reader in your Python environment with `python3 -m pip install -r scripts/requirements.txt`. Resolve these paths from the installed skill directory.
+Install the YAML 1.2 and CommonMark readers in your Python environment with `python3 -m pip install -r scripts/requirements.txt`. Resolve these paths from the installed skill directory.
 
 ```
 python3 scripts/validate_okf.py <bundle-dir> [--strict] [--report] [--today YYYY-MM-DD]
