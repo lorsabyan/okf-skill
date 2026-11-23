@@ -219,7 +219,7 @@ def generate(root: Path, check: bool, rebuild: bool = False) -> tuple[list[Path]
 
     directories = set()
     concepts = {}
-    legacy = bundle_version(root) in ("0.1", "0.2")
+    legacy = bundle_version(root, require_valid_metadata=True) in ("0.1", "0.2")
     for path in list_md_files(root):
         if path.name == "log.md":
             continue
@@ -274,7 +274,11 @@ def main() -> int:
         print(f"error: {args.bundle} is not a directory", file=sys.stderr)
         return 2
 
-    changed, unchanged = generate(args.bundle, args.check, args.rebuild)
+    try:
+        changed, unchanged = generate(args.bundle, args.check, args.rebuild)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     verb = "would update" if args.check else "wrote"
     for path in changed:
         print(f"{verb} {path.relative_to(args.bundle).as_posix()}")

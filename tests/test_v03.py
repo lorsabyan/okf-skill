@@ -1,11 +1,13 @@
 """Cross-version behavior at the public validator, report and index entry points."""
 from __future__ import annotations
 
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import bundle
+from helpers import SCRIPTS, bundle
 from generate_index import generate
 from validate_okf import check_bundle, collect_report, parse_frontmatter, trust_tier
 
@@ -18,6 +20,53 @@ class Version03(unittest.TestCase):
         self.metadata = '---\nokf_version: "0.3"\ntitle: Test\nlicense: MIT\nx-owner: ops\n---\n'
         bundle(self.root, {"index.md": self.metadata + "\n# Concepts\n\n* [A](a.md) - A\n",
                            "a.md": "---\ntype: Metric\ndescription: A\n---\n"})
+
+    def test_malformed_root_index_stops_generation_before_any_write(self):
+        index = self.root / "index.md"
+        bundle(self.root, {"sub/b.md": "---\ntype: Metric\n---\n"})
+        for metadata in ("---\nokf_version: '0.3'\ntitle: Finance\n",
+                         "---\nokf_version: '0.3'\ntitle: [\n---\n"):
+            index.write_bytes(metadata.encode())
+            for flags in ([], ["--check"], ["--rebuild"]):
+                with self.subTest(metadata=metadata, flags=flags):
+                    result = subprocess.run(
+                        [sys.executable, str(SCRIPTS / "generate_index.py"), str(self.root), *flags],
+                        capture_output=True, text=True,
+                    )
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn("index.md", result.stderr)
+                    self.assertEqual(index.read_bytes(), metadata.encode())
+                    self.assertFalse((self.root / "sub/index.md").exists())
+
+    def test_last_removal_produces_a_valid_stable_index(self):
+        index = self.root / "index.md"
+        (self.root / "a.md").unlink()
+        self.assertIn(index, generate(self.root, True)[0])
+        generate(self.root, False)
+        self.assertTrue(index.read_text().startswith(self.metadata))
+        self.assertNotIn("(a.md)", index.read_text())
+        self.assertEqual(generate(self.root, True)[0], [])
+        self.assertEqual(check_bundle(self.root), ([], []))
+        bundle(self.root, {"sub/b.md": "---\ntype: Metric\ndescription: B\n---\n"})
+        self.assertTrue(any("entries" in e for e in check_bundle(self.root)[0]))
+        generate(self.root, False)
+        (self.root / "sub/b.md").unlink()
+        generate(self.root, False)
+        self.assertEqual(check_bundle(self.root), ([], []))
+
+    def test_extensionless_computation_resources_are_checked(self):
+        path = self.root / "a.md"
+        path.write_text("---\ntype: Attested Computation\ndescription: A\nruntime: sql\n"
+                        "attester: {resource: verify}\nexecutor: {resource: run}\n"
+                        "sources: [{resource: all finance queries}]\n---\n"
+                        "# Computation\n\n```sql\nSELECT 1\n```\n")
+        errors, warnings = check_bundle(self.root)
+        self.assertFalse(errors)
+        self.assertEqual(len(warnings), 2, warnings)
+        for field in ("executor.resource", "attester.resource"):
+            self.assertTrue(any(field in w for w in warnings), warnings)
+        bundle(self.root, {"verify": "", "run": ""})
+        self.assertEqual(check_bundle(self.root), ([], []))
 
     def test_mixed_markdown_and_root_metadata_survive_rebuild(self):
         bundle(self.root, {"README.md": "# Read me", "notes/about.md": "---\ntitle: About\n---\n",

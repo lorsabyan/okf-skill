@@ -9,6 +9,16 @@ Skill releases follow their own version sequence. The attribution header in
 
 ## [Unreleased]
 
+### Fixed
+
+- Index generation now stops before writing any indexes if the root
+  `index.md` contains malformed or unterminated YAML frontmatter.
+- After the last concept is removed, the validator accepts an index with an
+  empty section when its directory has no concepts or child indexes to list.
+  Regeneration preserves the bundle's root metadata.
+- The validator now reports missing files referenced by extensionless
+  `executor.resource` and `attester.resource` paths.
+
 ## [0.3.0] — 2026-11-23
 
 ### Changed
