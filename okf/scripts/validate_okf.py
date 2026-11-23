@@ -129,11 +129,21 @@ def parse_frontmatter(text: str, legacy: bool = False) -> tuple[dict | None, str
     return (data if isinstance(data, dict) else None), body
 
 
-def bundle_version(root: Path) -> str:
+def bundle_version(root: Path, *, require_valid_metadata: bool = False) -> str:
     index = root / "index.md"
     if _visible(root, index) and index.is_file():
-        fm, _ = parse_frontmatter(_read(index)[0], legacy=True)
-        return str((fm or {}).get("okf_version") or "")
+        text, clean = _read(index)
+        fm, _ = parse_frontmatter(text, legacy=True)
+        version = str((fm or {}).get("okf_version") or "")
+        if require_valid_metadata:
+            if not clean:
+                raise ValueError(f"{index}: invalid UTF-8")
+            if text.splitlines()[:1] == ["---"]:
+                if version not in ("0.1", "0.2"):
+                    fm, _ = parse_frontmatter(text)
+                if fm is None:
+                    raise ValueError(f"{index}: malformed or unterminated YAML frontmatter")
+        return version
     return ""
 
 
@@ -199,6 +209,7 @@ class Bundle:
             if _visible(root, p) and p.is_file()
         }
         self.descriptions: dict[str, str] = {}
+        self.listing_dirs: set[Path] = set()
 
     def resolve(self, doc: Path, target: str) -> str | None:
         """Resolve a link/path target to a bundle-absolute path, or None if it
@@ -245,6 +256,13 @@ def _validate(bundle: Bundle, today: date | None) -> tuple[list[str], list[str],
             warnings.append(f"{rel}: not valid UTF-8 (spec §4); undecodable bytes were replaced")
         fm, body = parse_frontmatter(text, bundle.legacy)
         parsed[path] = (fm, body, text)
+        # An index lists local concepts and branches leading to concepts or
+        # child indexes. Its own presence does not require an entry.
+        if path.name == "index.md" or (path.name not in RESERVED and concept_type(fm)):
+            directory = path.parent if path.name == "index.md" else path
+            while directory != root and directory.parent not in bundle.listing_dirs:
+                directory = directory.parent
+                bundle.listing_dirs.add(directory)
         if fm and path.name not in RESERVED:
             desc = fm.get("description")
             if isinstance(desc, str) and desc:
@@ -312,7 +330,7 @@ def _check_reserved(bundle, path, rel, fm, body, text, is_root_index, errors, wa
         structural = warnings if bundle.legacy else errors
         if not re.search(r"^#{1,6}\s+\S", haystack, re.M):
             structural.append(f"{rel}: index.md has no section heading")
-        if not INDEX_ENTRY_RE.search(haystack):
+        if path.parent in bundle.listing_dirs and not INDEX_ENTRY_RE.search(haystack):
             structural.append(f"{rel}: index.md has no '* [Title](url) - description' entries")
         else:
             _check_index_entries(bundle, path, rel, haystack, warnings)
@@ -437,7 +455,7 @@ def _check_paths(bundle, path, rel, fm, warnings) -> None:
     for label, value in candidates:
         if not isinstance(value, str) or not value or URI_SCHEME_RE.match(value):
             continue
-        if label.endswith("resource") and not _looks_like_path(value):
+        if label.startswith("sources[") and not _looks_like_path(value):
             continue
         target = value.split("#")[0]
         resolved = bundle.resolve(path, target)
