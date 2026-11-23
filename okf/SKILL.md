@@ -1,23 +1,11 @@
 ---
 name: okf
-description: Author, validate, consume, and navigate Open Knowledge Format (OKF) knowledge bundles — directories of markdown files with YAML frontmatter that describe datasets, tables, metrics, APIs, playbooks, and attested computations. Use this skill whenever the user mentions OKF, knowledge bundles, a knowledge catalog, "metadata as code", documenting a dataset/schema as markdown, creating concept docs with frontmatter, or asks to generate, check, fix, browse, or answer questions from a bundle of markdown knowledge files. Also use it for OKF provenance and trust fields (sources, generated, verified, status, stale_after), for sanctioned/attested computations, and when converting existing catalog metadata (BigQuery, Dataplex, dbt, OpenAPI, database schemas) into agent-readable markdown documentation.
+description: Author, validate, navigate, and answer questions from Open Knowledge Format (OKF) bundles. Use for OKF catalog conversion, provenance, trust and freshness review, bundle indexes, and attested computations. Supports v0.3 and earlier bundles.
 ---
 
 # Open Knowledge Format (OKF)
 
-OKF v0.2 is a vendor-neutral format for representing knowledge — the metadata,
-context, and curated insight around data and systems — as plain markdown files
-with YAML frontmatter, organized in a directory tree called a **bundle**.
-No SDK, no registry, no required tooling: if you can read a file you can
-consume OKF, and if you can `git clone` you can ship it.
-
-The full specification is in [references/SPEC.md](references/SPEC.md).
-Read it when you need exact rules (reserved filenames, conformance,
-attested-computation contracts, versioning). This file covers the 90% you
-need for day-to-day work.
-
-**This skill targets v0.2.** v0.1 bundles are still valid input — see
-[Reading v0.1 bundles](#reading-v01-bundles) at the end.
+Author new bundles using **OKF v0.3**. Use the bundled [official specification](references/SPEC.md) for exact rules. §12.1 and Appendix B describe compatibility with v0.2, undeclared bundles, and v0.1.
 
 ## Core model
 
@@ -31,9 +19,11 @@ need for day-to-day work.
   the surrounding prose conveys the relationship's meaning. Broken links are
   legal (they mark not-yet-written knowledge).
 
+Skip dot-paths and symlinks outside the bundle. Other Markdown files, including README.md, can coexist with concepts. Only a non-reserved Markdown file with a non-empty string `type` is a concept.
+
 ## Concept document format
 
-Every concept file = YAML frontmatter + markdown body:
+Start and end YAML 1.2 core-schema frontmatter with an exact `---` line. Use unique mapping keys and quote strings that resemble numbers or booleans. Preserve existing values and unknown keys at every level when editing. Use `x-<producer>-<name>` for extensions. Write the body in CommonMark with GFM tables and footnotes.
 
 ````markdown
 ---
@@ -98,32 +88,11 @@ Rules that matter:
 
 ### Cross-linking
 
-**Use file-relative links. Never start a link with `/`.**
-
-```markdown
-[users](users.md)                      ← sibling concept
-[dataset](../datasets/sales.md)        ← parent dataset from a table
-[event params](../references/params.md)  ← reference doc
-```
-
-A leading `/` is resolved by GitHub against the *site*, not the bundle root,
-so `/tables/orders.md` 404s whenever the bundle sits in a subdirectory of a
-larger repository — a distribution mode the spec explicitly supports. Every
-reference bundle produced by an agent uses relative links exclusively.
-
-Spec §6.1 nominally calls the bundle-absolute form "recommended" because it
-survives file moves, and a bundle-root-aware reader resolves it fine. Treat
-that as safe only when the bundle *is* the repository root and you control
-every consumer; otherwise relative wins, because a link that does not
-resolve on GitHub is worse than one that breaks on `git mv`.
-
-Also: link only to concepts that exist, one link per concept mention per
-section, never from headings or inside fenced code, and never a doc to
-itself.
+Use file-relative links such as `[orders](../tables/orders.md)` for GitHub navigation. A leading slash, as in `/tables/orders.md`, starts at the bundle root. Accept both forms in links and path fields. Resolve bare paths from the containing file. Percent-encode spaces and reserved characters, preserve filename case, and treat locations outside the bundle as external. For v0.2 and earlier or undeclared bundles, try the bundle root if a relative path **field** misses. A broken link can mark knowledge still to be written.
 
 ## Provenance, trust, and lifecycle
 
-These frontmatter families are what v0.2 adds. All optional, but their
+These frontmatter families are what v0.2 adds. All are optional, and their
 *absence* carries meaning: an unverified concept is distinguishable from a
 verified one. Never reject a concept for missing them.
 
@@ -139,29 +108,11 @@ verified one. Never reject a concept for missing them.
 **Timestamp convention** for every timestamp-valued key (`generated.at`,
 `verified[].at`, `stale_after`, `sources[].last_modified`, `usage_window.from`
 and `.to`): an ISO 8601 datetime with an explicit offset — `2026-06-30T14:00:00Z`.
-Write that form. A bare `YYYY-MM-DD` is still read without complaint, because
-bundles predating this rule declare the same `okf_version`. The one exception is
-`log.md` date headings (§9), which stay `YYYY-MM-DD`.
+A date alone denotes midnight UTC. A date-time requires an explicit offset. If a deadline cannot be parsed, report freshness as unknown. A stale concept requires review.
 
-**Actor convention** for every `by` field: `<producer>/<version>` for agents
-and tools (`reference_agent/gemini-2.5-pro`), `human:<id>` for a person
-(`human:ahormati`), `process:<id>` for automation (`process:finance-nightly`).
-Use the `human:` prefix for anything hand-authored or human-confirmed —
-trust tiers key off it.
+Use `human:<id>` for a person, `team:<id>` for a team, `process:<id>` for automation, or `<producer>/<version>` for a tool. Record actual verification only. A verification needs both `by` and `at`. For every bundle, compare its instant with the last meaningful content change (`generated.at`). Events at or after that instant are current. When generation is absent, all valid events are current. Any current human review gives *human-reviewed*, other current events give *machine-confirmed*, and no current event gives *unverified*. Retain older events as history.
 
-**Trust tiers** a consumer derives from `verified`: no key ⇒ *unverified*;
-non-`human:` actors only ⇒ *machine-confirmed*; any `human:` actor ⇒
-*human-reviewed*. Advisory signals, not access control.
-
-`generated` and `verified` are independent: content can change without
-re-confirmation, and facts can be re-confirmed without regeneration.
-
-`sources[].resource` names either something followable (a URL, a
-bundle-relative path, a path into `references/`) or a scope descriptor it
-cannot follow, like `all queries in BigQuery project X`. When it points at
-another concept in the bundle, the derivation edge is already in the link
-graph — recurse into that source's own `sources` rather than inventing a
-lineage field.
+For a moved or retired concept, retain the old file with `status: deprecated` and set `superseded_by` to the replacement path when available. Follow that path for current knowledge. Exclude unknown status values from current-knowledge filters.
 
 ## Attested computations
 
@@ -173,7 +124,7 @@ Each computation is **its own concept**; concepts that need the value link to
 it. One computation per figure — revenue, profit, and margin are three
 concepts, because each verifies, goes stale, and attests independently.
 
-```markdown
+````markdown
 ---
 type: Attested Computation
 title: Revenue for fiscal year
@@ -192,13 +143,16 @@ stale_after: 2026-09-23T00:00:00Z
 
 # Computation
 
-    SELECT SUM(amount) AS revenue
-    FROM finance.recognized_revenue
-    WHERE fiscal_year = @year
+```sql
+SELECT SUM(amount) AS revenue
+FROM finance.recognized_revenue
+WHERE fiscal_year = @year
 ```
+````
 
 - `runtime` defines what `parameters` mean (a SQL bind variable, a dbt var, a
-  Python argument).
+  Python argument). Each parameter requires a name and type. Its `required` flag defaults to false.
+- Read `computation` when present. Otherwise take the first fenced block under a `Computation` ATX heading, up to the next heading at the same or higher level. A missing computation cannot attest.
 - Give the computation **either** inline under `# Computation` **or** as a
   `computation:` path to a file — not both.
 - `executor.resource` names run instructions; `executor.receipt` declares the
@@ -215,7 +169,7 @@ stale_after: 2026-09-23T00:00:00Z
 
 `index.md` — optional per-directory listing for progressive disclosure.
 No frontmatter (exception: the bundle-root index may carry a frontmatter
-block declaring `okf_version: "0.2"`).
+block declaring `okf_version: "0.3"`, `title`, `description`, `license`, and extension keys). Preserve this block during regeneration.
 
 Group entries by the concept's **`type`**, using the type name verbatim as the
 section heading, sections in alphabetical order. Within a section, sort entries
@@ -246,7 +200,7 @@ upstream generates and what renders on GitHub.
 
 Run `scripts/generate_index.py` (below) rather than writing these by hand.
 
-`log.md` — optional change history, newest first, ISO `YYYY-MM-DD` date
+`log.md` — optional change history, without frontmatter in v0.3, newest first, ISO `YYYY-MM-DD` date
 headings, bold verb convention (`**Update**`, `**Creation**`, `**Deprecation**`):
 
 ```markdown
@@ -275,6 +229,7 @@ headings, bold verb convention (`**Update**`, `**Creation**`, `**Deprecation**`)
 5. **Generate `index.md` for every directory** (and the root) by running
    `python3 scripts/generate_index.py <bundle-dir>`. Re-run it after adding or
    removing concepts; `--check` fails without writing if any index is stale.
+   For a new bundle, declare `okf_version: "0.3"` in the root index frontmatter. Keep existing version declarations when maintaining older bundles.
 6. **Append to `log.md`** under today's date when making meaningful changes.
 7. **Validate** (next section) before handing the bundle over.
 
@@ -285,17 +240,14 @@ source in `sources`.
 
 ## Workflow: validating a bundle
 
-Run the bundled scripts (stdlib-only, no dependencies). Paths are relative to
-this skill's directory, so use their absolute paths:
+Install the YAML 1.2 reader in your Python environment with `python3 -m pip install -r scripts/requirements.txt`. Resolve these paths from the installed skill directory.
 
 ```
 python3 scripts/validate_okf.py <bundle-dir> [--strict] [--report] [--today YYYY-MM-DD]
 python3 scripts/generate_index.py <bundle-dir> [--check] [--rebuild]
 ```
 
-**Errors** are the three v0.2 conformance rules (§11): every non-reserved
-`.md` file has a parseable frontmatter block, every block has a non-empty
-`type`, and reserved files follow their structure. Exit code 0 = conformant.
+**Conformance (§11).** In v0.3 every frontmatter block must be a YAML mapping and reserved files must follow their format. A Markdown file without frontmatter or a type gets a warning and is skipped in reports and index discovery. Accept legacy log frontmatter in undeclared bundles. For a declared v0.2 or v0.1 bundle, continue to require frontmatter and a type on each non-reserved Markdown file.
 
 **Warnings** are soft guidance the spec says consumers must tolerate: broken
 cross-links, missing descriptions, missing `index.md`, malformed trust or
@@ -309,7 +261,7 @@ intentional placeholder for knowledge not yet written.
 `--report` skips validation and prints each concept's `type`, `status`, trust
 tier, and staleness, with totals. Use it to answer "what in this bundle still
 needs human review, and what has gone stale" before relying on a bundle or
-handing one over. `--today` pins the clock, which is what makes staleness
+handing one over. `--today` pins the clock to midnight UTC on that date, which is what makes staleness
 output reproducible.
 
 When asked to fix a bundle, prefer minimal edits: add missing frontmatter
@@ -329,13 +281,13 @@ Use **progressive disclosure** — don't bulk-load the whole tree:
    `status`); treat bodies as the authoritative prose/schema content.
 5. **Check trust and freshness before relying on a claim.** Derive the trust
    tier from `verified`, and treat a concept as stale when
-   `today >= stale_after`. Say so when you rely on something unverified or
+   `now >= stale_after`. Say so when you rely on something unverified or
    stale rather than presenting it as settled fact.
 6. **Honour `status`.** Prefer `stable`; treat `draft` as provisional; do not
    use `deprecated` concepts for new work, even though they remain readable.
 7. For a figure backed by an `Attested Computation`, run the sanctioned
    computation with your parameter values — do not compose your own — and
-   surface the attestation result. Refuse to present a failing attestation.
+   surface the attestation result. Show the verdict and reason on failure. Present a value as attested only after successful verification with a declared runtime, computation, and attester.
 8. Tolerate everything the spec says to tolerate: unknown types, extra keys,
    broken links, missing indexes, absent trust fields. Never reject a bundle
    for those.
@@ -346,14 +298,9 @@ concept ID) in your answer so the user can verify.
 ## Reading v0.1 bundles
 
 v0.2 supersedes v0.1 and retires two of its conventions. When reading an
-older bundle, fall back gracefully; when writing, use the v0.2 form.
+older bundle, fall back gracefully; when writing, use v0.3. Preserve the version of an existing bundle unless migrating it.
 
 | v0.1 | v0.2 | Fallback when consuming |
 |---|---|---|
 | `timestamp: <ISO 8601>` | `generated: { by, at }` | Read `timestamp` as `generated.at` when `generated` is absent. |
 | body `# Citations` list, numbered `[1] …` | `sources` frontmatter + `[^id]` footnotes | Still parse a `# Citations` list for v0.1 docs. |
-
-Everything else carries forward unchanged: bundle structure, reserved
-filenames, the required `type`, `title`/`description`/`resource`/`tags`,
-cross-linking, index files, log files, and the permissive conformance model.
-The validator reports these two as migration warnings, never errors.

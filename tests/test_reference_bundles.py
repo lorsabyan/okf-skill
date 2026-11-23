@@ -4,8 +4,8 @@ Skipped unless the bundles are available locally, so the suite stays offline by
 default. CI clones open-knowledge-format at the pinned commit and points
 OKF_REFERENCE_BUNDLES at its bundles directory.
 
-    git clone https://github.com/GoogleCloudPlatform/open-knowledge-format
-    cd open-knowledge-format && git checkout ad30107
+    git clone https://github.com/open-knowledge-format/open-knowledge-format
+    cd open-knowledge-format && git checkout 527e81a
     OKF_REFERENCE_BUNDLES=$PWD/bundles python3 -m unittest discover tests
 """
 

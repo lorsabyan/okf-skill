@@ -4,7 +4,7 @@
 
 An [Agent Skill](https://agentskills.io) that teaches coding agents — **Claude Code** and
 **OpenAI Codex** — to author, validate, and consume
-[Open Knowledge Format (OKF) v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/ad30107/SPEC.md)
+[Open Knowledge Format (OKF) v0.3](https://github.com/open-knowledge-format/open-knowledge-format/blob/527e81a/SPEC.md)
 knowledge bundles: directories of markdown files with YAML frontmatter that describe
 datasets, tables, metrics, APIs, playbooks, and attested computations.
 
@@ -14,7 +14,7 @@ datasets, tables, metrics, APIs, playbooks, and attested computations.
 okf/                            # this directory is the skill; symlink or copy it
 ├── SKILL.md                    # format quick-reference + authoring/validating/consuming workflows
 ├── references/
-│   └── SPEC.md                 # full OKF v0.2 spec (verbatim from GoogleCloudPlatform/open-knowledge-format)
+│   └── SPEC.md                 # full OKF v0.3 spec (verbatim from open-knowledge-format/open-knowledge-format)
 └── scripts/
     ├── validate_okf.py         # conformance validator + trust/freshness report (exit 0 = conformant)
     └── generate_index.py       # index.md generator; non-destructive, --check for CI
@@ -50,17 +50,17 @@ ln -sfn "$PWD/okf" ~/.codex/skills/okf
 
 ## Validator
 
-Stdlib-only, no dependencies. CI covers Python 3.9, 3.11, and 3.13 on Linux
-plus 3.13 on macOS; the code uses no syntax newer than 3.7.
+Install the YAML 1.2 reader in your Python environment:
+
+```sh
+python3 -m pip install -r okf/scripts/requirements.txt
+```
 
 ```sh
 python3 okf/scripts/validate_okf.py <bundle-dir> [--strict]
 ```
 
-**Errors** (exit 1) are the three v0.2 conformance rules from §11: every
-non-reserved `.md` file has a parseable YAML frontmatter block, every block
-has a non-empty `type`, and reserved files (`index.md`, `log.md`) follow
-their structure.
+**Conformance** follows v0.3 by default. Markdown without a concept type is skipped with a warning. Malformed YAML mapping blocks are errors. Declared v0.2 and v0.1 bundles retain their required-frontmatter and type checks. Earlier and undeclared bundles can resolve legacy path fields from the bundle root.
 
 **Warnings** (exit 0) are soft guidance the spec says consumers must
 tolerate:
@@ -123,7 +123,7 @@ appended and removed ones dropped. `--rebuild` opts into a full rewrite;
 cd tests && python3 -m unittest discover -s . -t .
 ```
 
-105 tests, stdlib `unittest`, no dependencies. Fixtures are constructed in code
+The suite uses Python’s `unittest`. Fixtures are constructed in code
 because two regressions under test are encoding- and whitespace-sensitive (a
 UTF-8 BOM, a fence indented inside a list item) and an editor would normalize
 them away in a committed file.
@@ -214,11 +214,7 @@ a bundles-only change stays quiet. Like staleness, it never fails a build.
 
 Releases are tagged and documented in [CHANGELOG.md](CHANGELOG.md).
 
-The version tracks **the skill**, not the format. They line up at `0.2.x` today
-because that release added OKF v0.2 support, but a future `0.3.0` would not imply
-an OKF v0.3 — the OKF version this skill targets is always the one pinned in
-`okf/references/SPEC.md`'s attribution header, and `tests/test_pinned_refs.py`
-enforces that every other citation agrees with it.
+The skill release version is independent of the supported OKF version. The vendored specification header identifies the pinned upstream revision.
 
 ## Skill or MCP server?
 
@@ -228,7 +224,7 @@ want follows from your client:
 
 | Your agent | Use | Why |
 |---|---|---|
-| **Claude Code, Codex** | **this skill** | Skills load automatically and carry the format itself, so the agent reads bundles with the file tools it already has. Nothing extra to install or run. |
+| **Claude Code, Codex** | **this skill** | Skills load automatically and carry the format itself, so the agent reads bundles with the file tools it already has. The bundled validation and indexing scripts use a YAML 1.2 reader. |
 | **Cursor, Windsurf, Zed, other MCP clients** | **okf-mcp-server** | No skill support, so the format has to arrive as tools instead. |
 | **An agent with no filesystem access** | **okf-mcp-server** | This skill needs to read files and run scripts; the server works over a protocol. |
 
@@ -239,7 +235,7 @@ and prescribes a complete procedure, while MCP tools cost a `ToolSearch`
 round-trip before the first call — so the server can only add latency here, never
 capability.
 
-The two share no code. The skill carries a stdlib-only Python validator; the
+The two share no code. The skill carries a Python validator; the
 server is TypeScript on
 [`@lorsabyan/okf-core`](https://www.npmjs.com/package/@lorsabyan/okf-core). Their
 validators are independently written, which is what makes the
@@ -255,11 +251,6 @@ validators are independently written, which is what makes the
 ## License
 
 Apache 2.0. `okf/references/SPEC.md` is reproduced verbatim from
-[GoogleCloudPlatform/open-knowledge-format](https://github.com/GoogleCloudPlatform/open-knowledge-format)
-at commit `ad30107` (Copyright Google LLC, Apache 2.0); everything else in
+[open-knowledge-format/open-knowledge-format](https://github.com/open-knowledge-format/open-knowledge-format)
+at commit `527e81a` (Copyright Google LLC, Apache 2.0); everything else in
 this repo is original.
-
-OKF used to live in `okf/` inside
-[GoogleCloudPlatform/knowledge-catalog](https://github.com/GoogleCloudPlatform/knowledge-catalog);
-upstream moved it to its own repository in August 2026 and marked that directory
-a frozen snapshot, so the pin above follows the format to its new home.
