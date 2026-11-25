@@ -9,6 +9,11 @@ Skill releases follow their own version sequence. The attribution header in
 
 ## [Unreleased]
 
+### Deprecated
+
+- The repository is archived. Use the official skills in
+  [open-knowledge-format/open-knowledge-format](https://github.com/open-knowledge-format/open-knowledge-format/tree/main/skills).
+
 ## [0.3.2] — 2026-11-23
 
 ### Fixed

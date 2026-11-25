@@ -1,5 +1,18 @@
 # okf-skill
 
+> [!IMPORTANT]
+> **This repository is archived and no longer maintained.** Use the official
+> Open Knowledge Format skills instead: [`okf-generate` and `okf-consume`](https://github.com/open-knowledge-format/open-knowledge-format/tree/main/skills)
+> in [open-knowledge-format/open-knowledge-format](https://github.com/open-knowledge-format/open-knowledge-format).
+> They cover authoring, migration, validation (OKF v0.3, with v0.2 fallback) and consumption.
+>
+> Install as a plugin:
+>
+> - Claude Code: `/plugin marketplace add open-knowledge-format/open-knowledge-format`, then `/plugin install okf@open-knowledge-format`
+> - Codex CLI: `codex plugin marketplace add open-knowledge-format/open-knowledge-format`, then `codex plugin add okf@open-knowledge-format`
+>
+> The last release here is [v0.3.2](https://github.com/lorsabyan/okf-skill/releases/tag/v0.3.2).
+
 [![CI](https://github.com/lorsabyan/okf-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/lorsabyan/okf-skill/actions/workflows/ci.yml)
 
 An [Agent Skill](https://agentskills.io) that teaches coding agents — **Claude Code** and
